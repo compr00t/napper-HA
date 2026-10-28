@@ -25,6 +25,51 @@ def get_time_with_timezone(dt: datetime.datetime | None = None) -> str:
     return dt.isoformat(timespec="milliseconds")
 
 
+def parse_absolute_time_str(
+    time_str: str | None, now: datetime.datetime | None = None
+) -> datetime.datetime | None:
+    """Parse an absolute time string like '17:37' or '07:05' into a timezone-aware datetime."""
+    if not time_str or not str(time_str).strip():
+        return None
+    raw = str(time_str).strip()
+    if now is None:
+        now = datetime.datetime.now().astimezone()
+    elif now.tzinfo is None:
+        now = now.astimezone()
+
+    # Check if full ISO datetime was passed
+    if "T" in raw:
+        try:
+            dt = datetime.datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            return dt.astimezone(now.tzinfo) if dt.tzinfo else dt.replace(tzinfo=now.tzinfo)
+        except Exception:
+            pass
+
+    parts = raw.split(":")
+    if len(parts) not in (2, 3):
+        raise ValueError(f"Ungültiges Uhrzeit-Format '{raw}'. Erwartet wird HH:MM (z. B. 17:37).")
+    try:
+        hour = int(parts[0])
+        minute = int(parts[1])
+        second = int(parts[2]) if len(parts) == 3 else 0
+    except ValueError as err:
+        raise ValueError(
+            f"Ungültiges Uhrzeit-Format '{raw}'. Erwartet wird HH:MM (z. B. 17:37)."
+        ) from err
+
+    if not (0 <= hour <= 23 and 0 <= minute <= 59 and 0 <= second <= 59):
+        raise ValueError(
+            f"Ungültige Uhrzeit '{raw}'. Stunde muss 0–23 und Minute 0–59 sein."
+        )
+
+    target_dt = now.replace(hour=hour, minute=minute, second=second, microsecond=0)
+    # If the entered time is more than 5 minutes in the future (e.g. entering 23:50 at 00:05),
+    # assume it refers to the previous calendar day.
+    if target_dt > now + datetime.timedelta(minutes=5):
+        target_dt -= datetime.timedelta(days=1)
+    return target_dt
+
+
 def resolve_target_datetime(
     dt: datetime.datetime | None = None,
     minutes_ago: int | float = 0,

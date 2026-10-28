@@ -75,8 +75,10 @@ class NapperWakeUpButton(NapperBaseButton):
         return super().available and self.coordinator.is_child_sleeping(self._baby_id)
 
     async def async_press(self) -> None:
-        minutes_ago = self.coordinator.pop_minutes_ago(self._baby_id)
-        await self.coordinator.async_wake_up(self._baby_id, minutes_ago=minutes_ago)
+        target_dt, minutes_ago = self.coordinator.pop_action_timing(self._baby_id)
+        await self.coordinator.async_wake_up(
+            self._baby_id, minutes_ago=minutes_ago, target_dt=target_dt
+        )
 
 
 class NapperStartNapButton(NapperBaseButton):
@@ -94,8 +96,10 @@ class NapperStartNapButton(NapperBaseButton):
         return super().available and not self.coordinator.is_child_sleeping(self._baby_id)
 
     async def async_press(self) -> None:
-        minutes_ago = self.coordinator.pop_minutes_ago(self._baby_id)
-        await self.coordinator.async_start_nap(self._baby_id, minutes_ago=minutes_ago)
+        target_dt, minutes_ago = self.coordinator.pop_action_timing(self._baby_id)
+        await self.coordinator.async_start_nap(
+            self._baby_id, minutes_ago=minutes_ago, target_dt=target_dt
+        )
 
 
 class NapperStartSleepButton(NapperBaseButton):
@@ -113,5 +117,7 @@ class NapperStartSleepButton(NapperBaseButton):
         return super().available and not self.coordinator.is_child_sleeping(self._baby_id)
 
     async def async_press(self) -> None:
-        minutes_ago = self.coordinator.pop_minutes_ago(self._baby_id)
-        await self.coordinator.async_start_sleep(self._baby_id, minutes_ago=minutes_ago)
+        target_dt, minutes_ago = self.coordinator.pop_action_timing(self._baby_id)
+        await self.coordinator.async_start_sleep(
+            self._baby_id, minutes_ago=minutes_ago, target_dt=target_dt
+        )

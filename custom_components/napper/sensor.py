@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -17,7 +18,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, MAX_NAP_SENSORS
-from .coordinator import NapperCoordinator, nap_label_de
+from .coordinator import NapperCoordinator, nap_label_de, parse_napper_iso
 
 
 async def async_setup_entry(
@@ -72,18 +73,19 @@ class NapperBaseSensor(CoordinatorEntity[NapperCoordinator], SensorEntity):
 
 
 class NapperUpcomingEventSensor(NapperBaseSensor):
-    """State entity showing the upcoming event in German ('Drittes Nickerchen in 44 Min.', 'Schlafenszeit in ...', 'Aufwachen in ...')."""
+    """Timestamp sensor showing the upcoming event so Home Assistant renders relative time ('in 2 Stunden')."""
 
     _attr_name = "Nächstes Ereignis"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_icon = "mdi:clock-fast"
 
     def __init__(self, coordinator: NapperCoordinator, baby_id: str) -> None:
         super().__init__(coordinator, baby_id, "upcoming_event")
 
     @property
-    def native_value(self) -> str:
+    def native_value(self) -> datetime.datetime | None:
         upcoming = self._summary().get("upcoming_event", {})
-        return upcoming.get("state_text_de", "Unbekannt")
+        return parse_napper_iso(upcoming.get("target_iso"))
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -94,6 +96,7 @@ class NapperUpcomingEventSensor(NapperBaseSensor):
             "baby_name": summary.get("baby_name"),
             "ereignis_typ": upcoming.get("type"),
             "titel": upcoming.get("title_de"),
+            "beschreibung": upcoming.get("state_text_de"),
             "countdown": upcoming.get("countdown_text"),
             "untertitel": upcoming.get("subtitle_de"),
             "minuten_bis": upcoming.get("minutes_until"),
@@ -176,9 +179,7 @@ class NapperWakeUpSensor(NapperBaseSensor):
     @property
     def native_value(self) -> str | None:
         wake = self._summary().get("wake_up", {})
-        time_str = wake.get("time")
-        status = wake.get("status", "erwartet")
-        return f"{time_str} ({status})" if time_str else None
+        return wake.get("time")
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -204,9 +205,7 @@ class NapperBedtimeSensor(NapperBaseSensor):
     @property
     def native_value(self) -> str | None:
         bed = self._summary().get("bedtime", {})
-        time_str = bed.get("time")
-        status = bed.get("status", "erwartet")
-        return f"{time_str} ({status})" if time_str else None
+        return bed.get("time")
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -305,10 +304,9 @@ class NapperNapSensor(NapperBaseSensor):
         start = nap.get("start_time")
         end = nap.get("end_time")
         dur = nap.get("duration_formatted")
-        status = nap.get("status")
         if nap.get("is_open"):
             return f"Aktiv seit {start} ({dur})"
-        return f"{start} – {end} ({dur}, {status})"
+        return f"{start} – {end} ({dur})"
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

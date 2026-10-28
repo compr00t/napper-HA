@@ -13,6 +13,7 @@ class NapperCircleCard extends HTMLElement {
     this._hass = null;
     this._selectedEntityId = null;
     this._minutesAgo = 0;
+    this._absoluteTime = "";
     this._busyAction = null;
   }
 
@@ -58,6 +59,10 @@ class NapperCircleCard extends HTMLElement {
       if (found.length > 0) {
         this._selectedEntityId = found[0].entity_id;
       }
+    }
+    // Avoid clobbering input focus while the user is typing a time or offset
+    if (this.shadowRoot?.activeElement?.tagName === "INPUT") {
+      return;
     }
     this._render();
   }
@@ -174,14 +179,25 @@ class NapperCircleCard extends HTMLElement {
 
   async _callNapperService(serviceName, babyId) {
     if (!this._hass || !babyId || this._busyAction) return;
+    // Read latest values directly from inputs in case user clicked button immediately after typing
+    const timeInput = this.shadowRoot?.querySelector(".custom-time");
+    const minsInput = this.shadowRoot?.querySelector(".custom-mins");
+    const timeStr = (timeInput ? timeInput.value : this._absoluteTime || "").trim();
+    const minsAgo = minsInput ? Number(minsInput.value) || 0 : Number(this._minutesAgo) || 0;
+
     this._busyAction = serviceName;
     this._render();
     try {
-      await this._hass.callService("napper", serviceName, {
+      const payload = {
         baby_id: babyId,
-        minutes_ago: Number(this._minutesAgo) || 0,
-      });
+        minutes_ago: timeStr ? 0 : minsAgo,
+      };
+      if (timeStr) {
+        payload.time = timeStr;
+      }
+      await this._hass.callService("napper", serviceName, payload);
       this._minutesAgo = 0;
+      this._absoluteTime = "";
     } catch (err) {
       console.error("Napper service call failed:", err);
     } finally {
@@ -582,9 +598,33 @@ class NapperCircleCard extends HTMLElement {
           border: 1px solid rgba(143, 136, 255, 0.35);
           color: #fff;
           border-radius: 8px;
-          padding: 3px 6px;
+          padding: 4px 6px;
           font-size: 12px;
           text-align: center;
+        }
+        .time-row {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          justify-content: space-between;
+          gap: 6px;
+          margin-bottom: 10px;
+          padding-top: 8px;
+          border-top: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .custom-time {
+          width: 96px;
+          background: rgba(0, 0, 0, 0.3);
+          border: 1px solid rgba(143, 136, 255, 0.35);
+          color: #fff;
+          border-radius: 8px;
+          padding: 4px 8px;
+          font-size: 12.5px;
+          text-align: center;
+          font-variant-numeric: tabular-nums;
+        }
+        .custom-time::placeholder {
+          color: rgba(255, 255, 255, 0.38);
         }
         .action-buttons {
           display: grid;
@@ -695,13 +735,9 @@ class NapperCircleCard extends HTMLElement {
                       stroke-width="2.6"
                       ${wakeUp.is_tracked ? "" : 'stroke-dasharray="2.5 4"'} />
               ${this._renderSunriseIcon(wakePos.x, wakePos.y)}
-              <text x="${wakePos.x.toFixed(1)}" y="${(wakePos.y + 37).toFixed(1)}"
+              <text x="${wakePos.x.toFixed(1)}" y="${(wakePos.y + 38).toFixed(1)}"
                     fill="#e8b439" font-size="14" font-weight="600" text-anchor="middle">
                 ${wakeUp.time || "--:--"}
-              </text>
-              <text x="${wakePos.x.toFixed(1)}" y="${(wakePos.y + 50).toFixed(1)}"
-                    fill="rgba(232,180,57,0.65)" font-size="9.5" text-anchor="middle">
-                ${wakeUp.status || ""}
               </text>
             </g>
 
@@ -713,13 +749,9 @@ class NapperCircleCard extends HTMLElement {
                       stroke-width="2.6"
                       ${bedtime.is_tracked ? "" : 'stroke-dasharray="2.5 4"'} />
               ${this._renderBedtimeIcon(bedPos.x, bedPos.y)}
-              <text x="${bedPos.x.toFixed(1)}" y="${(bedPos.y + 37).toFixed(1)}"
+              <text x="${bedPos.x.toFixed(1)}" y="${(bedPos.y + 38).toFixed(1)}"
                     fill="#d97b43" font-size="14" font-weight="600" text-anchor="middle">
                 ${bedtime.time || "--:--"}
-              </text>
-              <text x="${bedPos.x.toFixed(1)}" y="${(bedPos.y + 50).toFixed(1)}"
-                    fill="rgba(217,123,67,0.65)" font-size="9.5" text-anchor="middle">
-                ${bedtime.status || ""}
               </text>
             </g>
 
@@ -756,7 +788,7 @@ class NapperCircleCard extends HTMLElement {
               <span style="font-size:18px;">💤</span>
             </div>
             <div class="stat-value">${summary.total_tracked_sleep_short || "0 min"} / ${summary.total_expected_sleep_short || "0 min"}</div>
-            <div class="stat-sub">Tagesschlaf (getrackt / erw.)</div>
+            <div class="stat-sub">Tagesschlaf</div>
           </div>
         </div>
 
@@ -768,7 +800,6 @@ class NapperCircleCard extends HTMLElement {
             <div class="nap-row">
               <div class="nap-name">☀️ Aufwachen</div>
               <div class="nap-times">${wakeUp.time || "--:--"} Uhr</div>
-              <span class="nap-badge ${wakeUp.status}">${wakeUp.status}</span>
             </div>
             ${naps
               .map(
@@ -781,7 +812,6 @@ class NapperCircleCard extends HTMLElement {
                 <div class="nap-times">
                   ${n.start_time} – ${n.end_time} (${n.duration_short})
                 </div>
-                <span class="nap-badge ${n.status}">${n.status}</span>
               </div>
             `
               )
@@ -789,27 +819,26 @@ class NapperCircleCard extends HTMLElement {
             <div class="nap-row">
               <div class="nap-name">🌙 Schlafenszeit</div>
               <div class="nap-times">${bedtime.time || "--:--"} Uhr</div>
-              <span class="nap-badge ${bedtime.status}">${bedtime.status}</span>
             </div>
           </div>
         `
             : ""
         }
 
-        <!-- Action Controls (Zeitdifferenz) -->
+        <!-- Action Controls (Zeitdifferenz & Absolute Uhrzeit) -->
         ${
           this._config.show_actions
             ? `
           <div class="actions-panel">
             <div class="offset-row">
-              <span class="offset-label">Zeitdifferenz: ${
+              <span class="offset-label" id="lbl-offset">Zeitdifferenz: ${
                 this._minutesAgo === 0 ? "0 Min. (Jetzt)" : `${this._minutesAgo} Min.`
               }</span>
               <div class="offset-chips">
                 ${presetOffsets
                   .map(
                     (m) => `
-                  <button class="chip ${this._minutesAgo === m ? "active" : ""}" data-mins="${m}">
+                  <button class="chip ${!this._absoluteTime && this._minutesAgo === m ? "active" : ""}" data-mins="${m}">
                     ${m === 0 ? "0m" : `${m}m`}
                   </button>
                 `
@@ -820,24 +849,57 @@ class NapperCircleCard extends HTMLElement {
               </div>
             </div>
 
+            <div class="time-row">
+              <span class="offset-label" id="lbl-time">Uhrzeit (absolut): ${
+                this._absoluteTime ? `${this._absoluteTime} Uhr` : "–"
+              }</span>
+              <div class="offset-chips">
+                <input type="text" class="custom-time" placeholder="z. B. 17:37" maxlength="5"
+                       value="${this._absoluteTime}" title="Absolute Uhrzeit im Format HH:MM (z. B. 17:37)" />
+                ${
+                  this._absoluteTime
+                    ? `<button class="chip clear-time-btn" title="Uhrzeit löschen">✕</button>`
+                    : ""
+                }
+              </div>
+            </div>
+
             <div class="action-buttons">
               <button class="act-btn ${summary.is_sleeping ? "primary" : ""}"
                       data-action="wake_up"
                       ${!summary.is_sleeping || this._busyAction ? "disabled" : ""}
                       title="${summary.is_sleeping ? "Aktuelles Nickerchen oder Nachtschlaf beenden" : "Nur aktiv, wenn das Kind gerade schläft"}">
-                ☀️ Aufwachen ${this._minutesAgo > 0 ? `(-${this._minutesAgo}m)` : ""}
+                ☀️ Aufwachen <span class="btn-suffix">${
+                  this._absoluteTime
+                    ? `(${this._absoluteTime})`
+                    : this._minutesAgo > 0
+                    ? `(-${this._minutesAgo}m)`
+                    : ""
+                }</span>
               </button>
               <button class="act-btn ${!summary.is_sleeping ? "primary" : ""}"
                       data-action="start_nap"
                       ${summary.is_sleeping || this._busyAction ? "disabled" : ""}
                       title="${!summary.is_sleeping ? "Nickerchen starten" : "Nicht möglich, da das Kind bereits schläft"}">
-                ☁️ Nickerchen starten ${this._minutesAgo > 0 ? `(-${this._minutesAgo}m)` : ""}
+                ☁️ Nickerchen starten <span class="btn-suffix">${
+                  this._absoluteTime
+                    ? `(${this._absoluteTime})`
+                    : this._minutesAgo > 0
+                    ? `(-${this._minutesAgo}m)`
+                    : ""
+                }</span>
               </button>
               <button class="act-btn"
                       data-action="start_sleep"
                       ${summary.is_sleeping || this._busyAction ? "disabled" : ""}
                       title="${!summary.is_sleeping ? "Nachtschlaf starten" : "Nicht möglich, da das Kind bereits schläft"}">
-                🌙 Schlafen starten ${this._minutesAgo > 0 ? `(-${this._minutesAgo}m)` : ""}
+                🌙 Schlafen starten <span class="btn-suffix">${
+                  this._absoluteTime
+                    ? `(${this._absoluteTime})`
+                    : this._minutesAgo > 0
+                    ? `(-${this._minutesAgo}m)`
+                    : ""
+                }</span>
               </button>
             </div>
           </div>
@@ -846,6 +908,29 @@ class NapperCircleCard extends HTMLElement {
         }
       </ha-card>
     `;
+
+    const updateButtonSuffixes = () => {
+      const suffix = this._absoluteTime
+        ? `(${this._absoluteTime})`
+        : this._minutesAgo > 0
+        ? `(-${this._minutesAgo}m)`
+        : "";
+      this.shadowRoot.querySelectorAll(".btn-suffix").forEach((el) => {
+        el.textContent = suffix;
+      });
+      const lblOffset = this.shadowRoot.querySelector("#lbl-offset");
+      if (lblOffset) {
+        lblOffset.textContent = `Zeitdifferenz: ${
+          this._minutesAgo === 0 ? "0 Min. (Jetzt)" : `${this._minutesAgo} Min.`
+        }`;
+      }
+      const lblTime = this.shadowRoot.querySelector("#lbl-time");
+      if (lblTime) {
+        lblTime.textContent = `Uhrzeit (absolut): ${
+          this._absoluteTime ? `${this._absoluteTime} Uhr` : "–"
+        }`;
+      }
+    };
 
     // Bind event listeners
     if (this._config.show_baby_tabs) {
@@ -857,18 +942,46 @@ class NapperCircleCard extends HTMLElement {
       });
     }
 
-    this.shadowRoot.querySelectorAll(".chip").forEach((chip) => {
+    this.shadowRoot.querySelectorAll(".chip[data-mins]").forEach((chip) => {
       chip.addEventListener("click", () => {
         this._minutesAgo = Number(chip.getAttribute("data-mins")) || 0;
+        this._absoluteTime = "";
         this._render();
       });
     });
 
+    const clearTimeBtn = this.shadowRoot.querySelector(".clear-time-btn");
+    if (clearTimeBtn) {
+      clearTimeBtn.addEventListener("click", () => {
+        this._absoluteTime = "";
+        this._render();
+      });
+    }
+
     const customInput = this.shadowRoot.querySelector(".custom-mins");
     if (customInput) {
-      customInput.addEventListener("change", (e) => {
+      customInput.addEventListener("input", (e) => {
         this._minutesAgo = Math.max(0, Math.min(720, Number(e.target.value) || 0));
-        this._render();
+        if (this._minutesAgo > 0) {
+          this._absoluteTime = "";
+          const timeEl = this.shadowRoot.querySelector(".custom-time");
+          if (timeEl) timeEl.value = "";
+        }
+        updateButtonSuffixes();
+      });
+      customInput.addEventListener("change", () => this._render());
+    }
+
+    const customTimeInput = this.shadowRoot.querySelector(".custom-time");
+    if (customTimeInput) {
+      customTimeInput.addEventListener("input", (e) => {
+        this._absoluteTime = (e.target.value || "").trim();
+        if (this._absoluteTime) {
+          this._minutesAgo = 0;
+          const minsEl = this.shadowRoot.querySelector(".custom-mins");
+          if (minsEl) minsEl.value = "0";
+        }
+        updateButtonSuffixes();
       });
     }
 

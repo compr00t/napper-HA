@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import NapperApiClient, NapperApiError
+from .api import NapperApiClient, NapperApiError, parse_absolute_time_str
 from .const import DEFAULT_SCAN_INTERVAL_SECONDS, DOMAIN, NAP_ORDINAL_DE
 
 _LOGGER = logging.getLogger(__name__)
@@ -527,18 +527,62 @@ class NapperCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self.client = client
         self.babies: dict[str, dict[str, Any]] = {}
         self.minutes_ago_offset: dict[str, int] = {}
+        self.absolute_time_input: dict[str, str] = {}
 
     def get_minutes_ago(self, baby_id: str) -> int:
-        """Return the configured 'minutes ago' offset for a baby."""
+        """Return the configured 'Zeitdifferenz' offset in minutes for a baby."""
         return int(self.minutes_ago_offset.get(baby_id, 0))
 
     def set_minutes_ago(self, baby_id: str, minutes: int) -> None:
-        """Set the 'minutes ago' offset for a baby and notify listeners."""
-        self.minutes_ago_offset[baby_id] = max(0, int(minutes))
+        """Set the 'Zeitdifferenz' offset for a baby and notify listeners."""
+        val = max(0, int(minutes))
+        self.minutes_ago_offset[baby_id] = val
+        if val > 0:
+            self.absolute_time_input[baby_id] = ""
         self.async_update_listeners()
 
+    def get_absolute_time(self, baby_id: str) -> str:
+        """Return the configured absolute time string ('HH:MM') for a baby."""
+        return str(self.absolute_time_input.get(baby_id, ""))
+
+    def set_absolute_time(self, baby_id: str, value: str) -> None:
+        """Validate and set the absolute time string ('HH:MM') for a baby."""
+        cleaned = str(value or "").strip()
+        if cleaned:
+            try:
+                parse_absolute_time_str(cleaned)
+            except ValueError as err:
+                raise HomeAssistantError(str(err)) from err
+            self.minutes_ago_offset[baby_id] = 0
+        self.absolute_time_input[baby_id] = cleaned
+        self.async_update_listeners()
+
+    def pop_action_timing(
+        self,
+        baby_id: str,
+        explicit_time: str | None = None,
+        explicit_minutes_ago: int = 0,
+    ) -> tuple[datetime.datetime | None, int]:
+        """Read and reset both 'Uhrzeit' and 'Zeitdifferenz', returning (target_dt, minutes_ago)."""
+        stored_time = self.get_absolute_time(baby_id)
+        stored_minutes = self.get_minutes_ago(baby_id)
+        self.absolute_time_input[baby_id] = ""
+        self.minutes_ago_offset[baby_id] = 0
+        self.async_update_listeners()
+
+        chosen_time = (explicit_time or "").strip() or stored_time
+        if chosen_time:
+            try:
+                target_dt = parse_absolute_time_str(chosen_time)
+            except ValueError as err:
+                raise HomeAssistantError(str(err)) from err
+            return target_dt, 0
+
+        chosen_minutes = int(explicit_minutes_ago) if int(explicit_minutes_ago) > 0 else stored_minutes
+        return None, chosen_minutes
+
     def pop_minutes_ago(self, baby_id: str) -> int:
-        """Read and reset the 'minutes ago' offset for a baby."""
+        """Read and reset the 'Zeitdifferenz' offset for a baby."""
         val = self.get_minutes_ago(baby_id)
         self.minutes_ago_offset[baby_id] = 0
         self.async_update_listeners()
@@ -550,25 +594,44 @@ class NapperCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             return False
         return bool(self.data[baby_id].get("summary", {}).get("is_sleeping", False))
 
-    async def async_start_nap(self, baby_id: str, minutes_ago: int = 0) -> None:
+    async def async_start_nap(
+        self,
+        baby_id: str,
+        minutes_ago: int = 0,
+        target_dt: datetime.datetime | None = None,
+    ) -> None:
         """Start a nap only if the child is not currently sleeping."""
         if self.is_child_sleeping(baby_id):
             raise HomeAssistantError(
                 "Nickerchen kann nicht gestartet werden, da das Kind bereits schläft."
             )
-        await self.client.async_start_open_nap(baby_id, minutes_ago=minutes_ago)
+        await self.client.async_start_open_nap(
+            baby_id, start_dt=target_dt, minutes_ago=minutes_ago
+        )
         await self.async_request_refresh()
 
-    async def async_start_sleep(self, baby_id: str, minutes_ago: int = 0) -> None:
+    async def async_start_sleep(
+        self,
+        baby_id: str,
+        minutes_ago: int = 0,
+        target_dt: datetime.datetime | None = None,
+    ) -> None:
         """Start night sleep only if the child is not currently sleeping."""
         if self.is_child_sleeping(baby_id):
             raise HomeAssistantError(
                 "Nachtschlaf kann nicht gestartet werden, da das Kind bereits schläft."
             )
-        await self.client.async_start_bedtime(baby_id, minutes_ago=minutes_ago)
+        await self.client.async_start_bedtime(
+            baby_id, start_dt=target_dt, minutes_ago=minutes_ago
+        )
         await self.async_request_refresh()
 
-    async def async_wake_up(self, baby_id: str, minutes_ago: int = 0) -> None:
+    async def async_wake_up(
+        self,
+        baby_id: str,
+        minutes_ago: int = 0,
+        target_dt: datetime.datetime | None = None,
+    ) -> None:
         """Wake up (end active nap or night sleep) only if currently sleeping."""
         if not self.is_child_sleeping(baby_id):
             raise HomeAssistantError(
@@ -576,7 +639,7 @@ class NapperCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             )
         logs = (self.data or {}).get(baby_id, {}).get("logs")
         await self.client.async_wake_up(
-            baby_id, current_logs=logs, minutes_ago=minutes_ago
+            baby_id, current_logs=logs, wake_dt=target_dt, minutes_ago=minutes_ago
         )
         await self.async_request_refresh()
 
@@ -591,6 +654,7 @@ class NapperCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             result: dict[str, dict[str, Any]] = {}
             for baby_id, baby_info in self.babies.items():
                 self.minutes_ago_offset.setdefault(baby_id, 0)
+                self.absolute_time_input.setdefault(baby_id, "")
                 today_data = await self.client.async_get_today(baby_id)
                 logs = today_data.get("logs", today_data.get("allLogs", []))
                 schedule_items = today_data.get("scheduleItems", [])

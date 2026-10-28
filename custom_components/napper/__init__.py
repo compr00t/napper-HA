@@ -39,6 +39,7 @@ PLATFORMS: list[Platform] = [
     Platform.SENSOR,
     Platform.BUTTON,
     Platform.NUMBER,
+    Platform.TEXT,
 ]
 
 SERVICE_SCHEMA = vol.Schema(
@@ -47,6 +48,7 @@ SERVICE_SCHEMA = vol.Schema(
         vol.Optional("minutes_ago", default=0): vol.All(
             vol.Coerce(int), vol.Range(min=0, max=720)
         ),
+        vol.Optional("time"): str,
     }
 )
 
@@ -138,27 +140,38 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 return coord, first_baby_id
         raise ValueError(f"Kein passendes Kind (baby_id={requested}) in Napper gefunden.")
 
-    def _resolve_minutes_ago(
-        coord: NapperCoordinator, baby_id: str, call: ServiceCall
-    ) -> int:
-        explicit = int(call.data.get("minutes_ago", 0))
-        stored = coord.pop_minutes_ago(baby_id)
-        return explicit if explicit > 0 else stored
-
     async def _handle_wake_up(call: ServiceCall) -> None:
         coord, baby_id = _resolve_coordinator_and_baby(call)
-        minutes_ago = _resolve_minutes_ago(coord, baby_id, call)
-        await coord.async_wake_up(baby_id, minutes_ago=minutes_ago)
+        target_dt, minutes_ago = coord.pop_action_timing(
+            baby_id,
+            explicit_time=call.data.get("time"),
+            explicit_minutes_ago=int(call.data.get("minutes_ago", 0)),
+        )
+        await coord.async_wake_up(
+            baby_id, minutes_ago=minutes_ago, target_dt=target_dt
+        )
 
     async def _handle_start_nap(call: ServiceCall) -> None:
         coord, baby_id = _resolve_coordinator_and_baby(call)
-        minutes_ago = _resolve_minutes_ago(coord, baby_id, call)
-        await coord.async_start_nap(baby_id, minutes_ago=minutes_ago)
+        target_dt, minutes_ago = coord.pop_action_timing(
+            baby_id,
+            explicit_time=call.data.get("time"),
+            explicit_minutes_ago=int(call.data.get("minutes_ago", 0)),
+        )
+        await coord.async_start_nap(
+            baby_id, minutes_ago=minutes_ago, target_dt=target_dt
+        )
 
     async def _handle_start_sleep(call: ServiceCall) -> None:
         coord, baby_id = _resolve_coordinator_and_baby(call)
-        minutes_ago = _resolve_minutes_ago(coord, baby_id, call)
-        await coord.async_start_sleep(baby_id, minutes_ago=minutes_ago)
+        target_dt, minutes_ago = coord.pop_action_timing(
+            baby_id,
+            explicit_time=call.data.get("time"),
+            explicit_minutes_ago=int(call.data.get("minutes_ago", 0)),
+        )
+        await coord.async_start_sleep(
+            baby_id, minutes_ago=minutes_ago, target_dt=target_dt
+        )
 
     if not hass.services.has_service(DOMAIN, SERVICE_START_NAP):
         hass.services.async_register(
