@@ -69,7 +69,7 @@ async def _async_register_lovelace_card(hass: HomeAssistant) -> None:
             )
         else:
             hass.http.register_static_path(CARD_URL, str(card_path), cache_headers=False)
-        add_extra_js_url(hass, CARD_URL)
+        add_extra_js_url(hass, f"{CARD_URL}?v=2.0.0")
 
         # Also auto-register in Lovelace storage resources if available
         lovelace = hass.data.get("lovelace")
@@ -80,13 +80,26 @@ async def _async_register_lovelace_card(hass: HomeAssistant) -> None:
             if hasattr(resources, "loaded") and not resources.loaded:
                 await resources.async_load()
                 resources.loaded = True
-            already_added = any(
-                str(item.get("url", "")).startswith(CARD_URL)
-                for item in resources.async_items()
+            existing_item = next(
+                (
+                    item
+                    for item in resources.async_items()
+                    if str(item.get("url", "")).startswith(CARD_URL)
+                ),
+                None,
             )
-            if not already_added and hasattr(resources, "async_create_item"):
+            target_url = f"{CARD_URL}?v=2.0.0"
+            if existing_item is None and hasattr(resources, "async_create_item"):
                 await resources.async_create_item(
-                    {"res_type": "module", "url": f"{CARD_URL}?v=1.2.0"}
+                    {"res_type": "module", "url": target_url}
+                )
+            elif (
+                existing_item is not None
+                and existing_item.get("url") != target_url
+                and hasattr(resources, "async_update_item")
+            ):
+                await resources.async_update_item(
+                    existing_item["id"], {"res_type": "module", "url": target_url}
                 )
 
         hass.data[DOMAIN]["_card_registered"] = True

@@ -1,18 +1,17 @@
 # Napper Baby-Schlaftracker für Home Assistant (HACS)
 
-Diese benutzerdefinierte Home Assistant Integration verbindet dein **Napper**-Konto (`https://api.napper.app`) mit Home Assistant – komplett auf **Deutsch** und inklusive der originalgetreuen **Napper Kreis-Ansicht** (`custom:napper-circle-card`).
+Diese benutzerdefinierte Home Assistant Integration verbindet dein **Napper**-Konto (`https://api.napper.app`) mit Home Assistant – komplett auf **Deutsch** und inklusive der **Napper Schlafplan-Karte** (`custom:napper-card`).
 
 ---
 
 ## Funktionen
 
-- **Vollständige Kreis-Ansicht (`custom:napper-circle-card`)** wie in der Napper-App:
-  - Startet bei der **Aufwachzeit** (getrackt oder erwartet) unten links.
-  - Zeigt jedes **Nickerchen** (1. bis 4. Nickerchen) als Segment auf dem Kreisbogen mit **Startzeit**, **Endzeit** und **Schlafdauer** (getrackt, aktiv oder erwartet).
-  - Endet bei der **Schlafenszeit** (getrackt oder erwartet) unten rechts.
-  - Zeigt in der Mitte den **Countdown zum nächsten Ereignis** (z. B. *„Drittes Nickerchen in 44 min – Um 17:07“*, *„Aufwachen in …“* oder *„Schlafenszeit in …“*).
-  - Zeigt unten auf dem Bogen die aktuelle **Wachzeit** (z. B. `1h 56m`) sowie die **aktuelle Uhrzeit-Markierung** auf dem Kreis.
-  - Tab-Umschalter für mehrere Kinder (z. B. *Kind 1* & *Kind 2*).
+- **Napper Schlafplan-Karte (`custom:napper-card`)**:
+  - Zeigt die vertikale Tages-Timeline mit **Aufwachzeit**, allen geplanten/getrackten **Nickerchen** (`1. Nickerchen`, `2. Nickerchen`, … – ohne ungeplante Einträge) sowie der **Schlafenszeit**.
+  - Vergangene (getrackte) Ereignisse werden mit ihrer tatsächlichen Zeit und Dauer dargestellt, zukünftige Vorhersagen kursiv mit erwarteter Dauer (`~30m`).
+  - Der **aktuelle Zeitpunkt** wird auf der Timeline visuell hervorgehoben (pulsierender `Jetzt`-Marker zwischen vergangenen und zukünftigen Ereignissen bzw. Hervorhebung des aktuell laufenden Schlafs).
+  - Untere Aktionsleiste mit den drei Buttons **Aufwachen**, **Nickerchen starten** und **Schlafen starten**.
+  - Unterstützt sowohl eine gemeinsame Karte (mit Kinder-Umschalter) als auch eine Einzelkarte pro Kind (`baby: "Max"`).
 - **Aktionen sofort, mit `Zeitdifferenz` oder zu einer absoluten `Uhrzeit` (z. B. `17:37`)**:
   - **Aufwachen** (beendet das aktuell laufende Nickerchen oder den Nachtschlaf – **nur aktiv, wenn das Kind gerade schläft**)
   - **Nickerchen starten** (startet ein Nickerchen – **nur aktiv, wenn das Kind aktuell nicht schläft**)
@@ -65,16 +64,16 @@ Für jedes Kind in deinem Napper-Konto wird automatisch ein eigenes Gerät angel
 
 ---
 
-## Lovelace Kreis-Karte (`custom:napper-circle-card`)
+## Lovelace Schlafplan-Karte (`custom:napper-card`)
 
-Die Integration registriert das Frontend-Modul `/napper_static/napper-circle-card.js` beim Start von Home Assistant **automatisch**.
+Die Integration registriert das Frontend-Modul beim Start von Home Assistant **automatisch**.
 
 ### Automatisch alle Kinder anzeigen (mit Tab-Umschalter oben)
 
 Füge auf deinem Dashboard eine **Manuelle Karte** mit folgendem YAML hinzu:
 
 ```yaml
-type: custom:napper-circle-card
+type: custom:napper-card
 ```
 
 ### Nur ein bestimmtes Kind anzeigen (Einzelkarte pro Kind)
@@ -82,11 +81,11 @@ type: custom:napper-circle-card
 Du kannst im visuellen Karten-Editor einfach das gewünschte Kind im Dropdown auswählen oder im YAML `baby` (Name des Kindes), `entity` oder `baby_id` angeben. Bei einer Einzelkarte werden die Tab-Umschalter für andere Kinder automatisch ausgeblendet:
 
 ```yaml
-type: custom:napper-circle-card
+type: custom:napper-card
 baby: "Max"
 ```
 
-*(Alternativ funktionieren auch `entity: sensor.max_nachstes_ereignis` oder `baby_id: "<DEINE_BABY_ID>"`.)*
+*(Alternativ funktionieren auch `type: custom:napper-circle-card`, `entity: sensor.max_nachstes_ereignis` oder `baby_id: "<DEINE_BABY_ID>"`.)*
 
 ---
 
