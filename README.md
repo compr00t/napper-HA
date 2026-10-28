@@ -13,12 +13,11 @@ Diese benutzerdefinierte Home Assistant Integration verbindet dein **Napper**-Ko
   - Zeigt in der Mitte den **Countdown zum nächsten Ereignis** (z. B. *„Drittes Nickerchen in 44 min – Um 17:07“*, *„Aufwachen in …“* oder *„Schlafenszeit in …“*).
   - Zeigt unten auf dem Bogen die aktuelle **Wachzeit** (z. B. `1h 56m`) sowie die **aktuelle Uhrzeit-Markierung** auf dem Kreis.
   - Tab-Umschalter für mehrere Kinder (z. B. *Kind 1* & *Kind 2*).
-- **Aktionen sofort oder vor `X` Minuten in der Vergangenheit**:
-  - **Nickerchen starten** (jetzt oder vor `X` Minuten)
-  - **Nickerchen / Schlaf beenden** (jetzt oder vor `X` Minuten)
-  - **Aufwachen eintragen** (jetzt oder vor `X` Minuten)
-  - **Schlafenszeit eintragen** (jetzt oder vor `X` Minuten)
-  - Direkt über die Schnellauswahl in der Karte (`Jetzt`, `-5m`, `-10m`, `-15m`, `-30m`, `-60m` oder frei wählbare Minuten), über die `number`-Entität **`Vor X Minuten (Zeitversatz)`** oder per Service-Aufruf mit `minutes_ago`.
+- **Aktionen mit `Zeitdifferenz` (sofort oder vor `X` Minuten)**:
+  - **Aufwachen** (beendet das aktuell laufende Nickerchen oder den Nachtschlaf – **nur aktiv, wenn das Kind gerade schläft**)
+  - **Nickerchen starten** (startet ein Nickerchen – **nur aktiv, wenn das Kind aktuell nicht schläft**)
+  - **Schlafen starten** (startet den Nachtschlaf – **nur aktiv, wenn das Kind aktuell nicht schläft**)
+  - Alle drei Buttons arbeiten mit der `number`-Entität **`Zeitdifferenz`** (`0–360 min`), über die Schnellauswahl in der Karte oder per Service-Aufruf mit `minutes_ago`.
 - **Komplett auf Deutsch**: Alle Entitätsnamen, Zustände, Attribute, Buttons, Services und die Lovelace-Karte sind auf Deutsch.
 
 ---
@@ -61,11 +60,10 @@ Für jedes Kind in deinem Napper-Konto wird automatisch ein eigenes Gerät angel
 | `sensor` | `sensor.max_wachzeit` | Aktuelle **Wachzeit** seit dem letzten Aufwachen | `2 Std. 00 Min.` |
 | `sensor` | `sensor.max_tagesschlaf` | **Tagesschlaf** (getrackt / erwartet gesamt) | `2 Std. 15 Min. (erwartet: 2 Std. 45 Min.)` |
 | `binary_sensor` | `binary_sensor.max_schlaft_gerade` | **Schläft gerade** (`on` / `off`) | `off` |
-| `number` | `number.max_vor_x_minuten_zeitversatz` | **Vor X Minuten (Zeitversatz)** für den nächsten Button-Klick (`0–360 min`, setzt sich nach Klick auf `0` zurück) | `0 min` |
-| `button` | `button.max_nickerchen_starten` | **Nickerchen starten** (nutzt den Zeitversatz `Vor X Minuten`) | – |
-| `button` | `button.max_nickerchen_schlaf_beenden` | **Nickerchen / Schlaf beenden** (nutzt den Zeitversatz `Vor X Minuten`) | – |
-| `button` | `button.max_aufwachen_eintragen` | **Aufwachen eintragen** (nutzt den Zeitversatz `Vor X Minuten`) | – |
-| `button` | `button.max_schlafenszeit_eintragen` | **Schlafenszeit eintragen** (nutzt den Zeitversatz `Vor X Minuten`) | – |
+| `number` | `number.max_zeitdifferenz` | **Zeitdifferenz** in Minuten für den nächsten Button-Klick (`0–360 min`, setzt sich nach Klick automatisch auf `0` zurück) | `0 min` |
+| `button` | `button.max_aufwachen` | **Aufwachen** – beendet ein laufendes Nickerchen oder den Nachtschlaf (nutzt `Zeitdifferenz`; nur aktiv, wenn das Kind gerade schläft) | – |
+| `button` | `button.max_nickerchen_starten` | **Nickerchen starten** (nutzt `Zeitdifferenz`; nur aktiv, wenn das Kind nicht schläft) | – |
+| `button` | `button.max_schlafen_starten` | **Schlafen starten** – startet den Nachtschlaf (nutzt `Zeitdifferenz`; nur aktiv, wenn das Kind nicht schläft) | – |
 
 ---
 
@@ -81,22 +79,32 @@ Füge auf deinem Dashboard eine **Manuelle Karte** mit folgendem YAML hinzu:
 type: custom:napper-circle-card
 ```
 
-### Nur ein bestimmtes Kind anzeigen
+### Nur ein bestimmtes Kind anzeigen (Einzelkarte pro Kind)
+
+Du kannst im visuellen Karten-Editor einfach das gewünschte Kind im Dropdown auswählen oder im YAML `baby` (Name des Kindes), `entity` oder `baby_id` angeben. Bei einer Einzelkarte werden die Tab-Umschalter für andere Kinder automatisch ausgeblendet:
 
 ```yaml
 type: custom:napper-circle-card
-entity: sensor.max_nachstes_ereignis
+baby: "Max"
 ```
 
-*(Alternativ kannst du auch `baby_id: "<DEINE_BABY_ID>"` angeben.)*
+*(Alternativ funktionieren auch `entity: sensor.max_nachstes_ereignis` oder `baby_id: "<DEINE_BABY_ID>"`.)*
 
 ---
 
 ## Home Assistant Aktionen (Services)
 
-Alle vier Services akzeptieren unter `baby_id` entweder die **Baby-ID** oder einfach den **Namen des Kindes** (z. B. `"Max"`) sowie optional `minutes_ago` (Standard: `0`):
+Alle drei Services akzeptieren unter `baby_id` entweder die **Baby-ID** oder einfach den **Namen des Kindes** (z. B. `"Max"`) sowie optional `minutes_ago` (Standard: `0`; falls `0`, wird der aktuelle Wert der `Zeitdifferenz`-Entität des Kindes verwendet):
 
-### 1. Nickerchen starten (jetzt oder vor X Minuten)
+### 1. Aufwachen (beendet Nickerchen oder Nachtschlaf – nur wenn das Kind schläft)
+```yaml
+action: napper.wake_up
+data:
+  baby_id: "Max"
+  minutes_ago: 10
+```
+
+### 2. Nickerchen starten (nur wenn das Kind nicht schläft)
 ```yaml
 action: napper.start_nap
 data:
@@ -104,25 +112,9 @@ data:
   minutes_ago: 15
 ```
 
-### 2. Nickerchen / Schlaf beenden (jetzt oder vor X Minuten)
+### 3. Schlafen starten (Nachtschlaf starten – nur wenn das Kind nicht schläft)
 ```yaml
-action: napper.stop_sleep
-data:
-  baby_id: "Max"
-  minutes_ago: 5
-```
-
-### 3. Aufwachen eintragen (jetzt oder vor X Minuten)
-```yaml
-action: napper.log_wakeup
-data:
-  baby_id: "Max"
-  minutes_ago: 10
-```
-
-### 4. Schlafenszeit eintragen (jetzt oder vor X Minuten)
-```yaml
-action: napper.log_bedtime
+action: napper.start_sleep
 data:
   baby_id: "Max"
   minutes_ago: 0

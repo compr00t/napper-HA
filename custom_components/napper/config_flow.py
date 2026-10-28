@@ -89,4 +89,5 @@ class NapperConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="otp",
             data_schema=vol.Schema({vol.Required(CONF_OTP): str}),
             errors=errors,
+            description_placeholders={"email": self._email},
         )

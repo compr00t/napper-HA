@@ -16,34 +16,44 @@ class NapperCircleCard extends HTMLElement {
     this._busyAction = null;
   }
 
+  static getConfigElement() {
+    return document.createElement("napper-circle-card-editor");
+  }
+
   static getStubConfig(hass) {
-    const napperEntity = Object.keys(hass?.states || {}).find(
-      (eid) =>
-        eid.startsWith("sensor.") &&
-        hass.states[eid]?.attributes?.summary?.circle
-    );
     return {
-      entity: napperEntity || "",
+      baby: "",
       show_nap_list: true,
       show_actions: true,
     };
   }
 
   setConfig(config) {
+    const hasFixedChild = Boolean(
+      config.baby || config.child || config.baby_id || config.entity
+    );
     this._config = {
       show_nap_list: true,
       show_actions: true,
+      show_baby_tabs: !hasFixedChild,
       ...config,
     };
     if (config.entity) {
       this._selectedEntityId = config.entity;
+    } else if (!hasFixedChild) {
+      // Multi-child mode keeps current selection or defaults to first child
+    } else {
+      this._selectedEntityId = null;
     }
     this._render();
   }
 
   set hass(hass) {
     this._hass = hass;
-    if (!this._selectedEntityId) {
+    const resolved = this._resolveConfiguredBabyEntity(hass);
+    if (resolved) {
+      this._selectedEntityId = resolved.entity_id;
+    } else if (!this._selectedEntityId) {
       const found = this._findAllBabyEntities(hass);
       if (found.length > 0) {
         this._selectedEntityId = found[0].entity_id;
@@ -62,7 +72,12 @@ class NapperCircleCard extends HTMLElement {
     for (const [eid, stateObj] of Object.entries(hass.states)) {
       const summary = stateObj?.attributes?.summary;
       if (summary && summary.baby_id && summary.circle) {
-        if (!byBabyId.has(summary.baby_id) || eid.includes("schlafstatus") || eid.includes("sleep_status")) {
+        if (
+          !byBabyId.has(summary.baby_id) ||
+          eid.includes("nachstes_ereignis") ||
+          eid.includes("upcoming_event") ||
+          eid.includes("schlafstatus")
+        ) {
           byBabyId.set(summary.baby_id, stateObj);
         }
       }
@@ -70,8 +85,56 @@ class NapperCircleCard extends HTMLElement {
     return Array.from(byBabyId.values());
   }
 
+  _resolveConfiguredBabyEntity(hass) {
+    if (!hass || !hass.states) return null;
+    const allBabies = this._findAllBabyEntities(hass);
+    if (allBabies.length === 0) return null;
+
+    // 1. Check explicit baby / child / baby_id config (matches name or baby_id)
+    const targetBaby = (
+      this._config.baby ||
+      this._config.child ||
+      this._config.baby_id ||
+      ""
+    )
+      .toString()
+      .trim()
+      .toLowerCase();
+
+    if (targetBaby) {
+      const match = allBabies.find((st) => {
+        const s = st.attributes?.summary || {};
+        return (
+          String(s.baby_id || "").toLowerCase() === targetBaby ||
+          String(s.baby_name || "").toLowerCase() === targetBaby
+        );
+      });
+      if (match) return match;
+    }
+
+    // 2. Check explicit entity config (even if user picked a different sensor of the same child)
+    if (this._config.entity && hass.states[this._config.entity]) {
+      const configuredState = hass.states[this._config.entity];
+      if (configuredState.attributes?.summary?.circle) {
+        return configuredState;
+      }
+      const attrBabyId = configuredState.attributes?.baby_id;
+      if (attrBabyId) {
+        const matchByAttr = allBabies.find(
+          (st) => st.attributes?.summary?.baby_id === attrBabyId
+        );
+        if (matchByAttr) return matchByAttr;
+      }
+    }
+
+    return null;
+  }
+
   _getActiveStateObj() {
     if (!this._hass) return null;
+    const configured = this._resolveConfiguredBabyEntity(this._hass);
+    if (configured) return configured;
+
     if (this._selectedEntityId && this._hass.states[this._selectedEntityId]) {
       const st = this._hass.states[this._selectedEntityId];
       if (st.attributes?.summary) return st;
@@ -525,15 +588,20 @@ class NapperCircleCard extends HTMLElement {
         }
         .action-buttons {
           display: grid;
-          grid-template-columns: repeat(2, 1fr);
+          grid-template-columns: repeat(3, 1fr);
           gap: 8px;
+        }
+        @media (max-width: 420px) {
+          .action-buttons {
+            grid-template-columns: 1fr;
+          }
         }
         .act-btn {
           display: flex;
           align-items: center;
           justify-content: center;
-          gap: 7px;
-          padding: 10px 10px;
+          gap: 6px;
+          padding: 10px 8px;
           border-radius: 14px;
           border: 1px solid rgba(163, 156, 255, 0.25);
           background: rgba(255, 255, 255, 0.07);
@@ -543,33 +611,36 @@ class NapperCircleCard extends HTMLElement {
           cursor: pointer;
           transition: all 0.15s ease;
         }
-        .act-btn:hover {
+        .act-btn:hover:not(:disabled) {
           background: rgba(139, 130, 255, 0.25);
           border-color: #9e96ff;
         }
-        .act-btn.primary {
+        .act-btn.primary:not(:disabled) {
           background: linear-gradient(135deg, rgba(124, 115, 255, 0.45), rgba(92, 83, 214, 0.45));
           border-color: #9e96ff;
         }
         .act-btn:disabled {
-          opacity: 0.5;
-          cursor: default;
+          opacity: 0.35;
+          cursor: not-allowed;
+          filter: grayscale(0.4);
         }
       </style>
 
       <ha-card>
         <div class="stars"></div>
 
-        <!-- Top bar with child selector & sleep status -->
+        <!-- Top bar with child selector (or single-child header) & sleep status -->
         <div class="top-bar">
           <div class="baby-tabs">
-            ${allBabies
+            ${(this._config.show_baby_tabs ? allBabies : [stateObj])
               .map((st) => {
                 const s = st.attributes.summary;
                 const isSelected = st.entity_id === stateObj.entity_id;
                 const initial = (s.baby_name || "B").charAt(0).toUpperCase();
                 return `
-                  <button class="baby-avatar ${isSelected ? "active" : ""}" data-entity="${st.entity_id}">
+                  <button class="baby-avatar ${isSelected ? "active" : ""}"
+                          data-entity="${st.entity_id}"
+                          style="${this._config.show_baby_tabs ? "" : "cursor:default;"}">
                     <span class="avatar-circle">${initial}</span>
                     <span>${s.baby_name}</span>
                   </button>
@@ -725,42 +796,48 @@ class NapperCircleCard extends HTMLElement {
             : ""
         }
 
-        <!-- Action Controls (Now or X minutes ago) -->
+        <!-- Action Controls (Zeitdifferenz) -->
         ${
           this._config.show_actions
             ? `
           <div class="actions-panel">
             <div class="offset-row">
-              <span class="offset-label">Zeitpunkt: ${
-                this._minutesAgo === 0 ? "Jetzt sofort" : `Vor ${this._minutesAgo} Min.`
+              <span class="offset-label">Zeitdifferenz: ${
+                this._minutesAgo === 0 ? "0 Min. (Jetzt)" : `${this._minutesAgo} Min.`
               }</span>
               <div class="offset-chips">
                 ${presetOffsets
                   .map(
                     (m) => `
                   <button class="chip ${this._minutesAgo === m ? "active" : ""}" data-mins="${m}">
-                    ${m === 0 ? "Jetzt" : `-${m}m`}
+                    ${m === 0 ? "0m" : `${m}m`}
                   </button>
                 `
                   )
                   .join("")}
                 <input type="number" min="0" max="720" class="custom-mins"
-                       value="${this._minutesAgo}" title="Vor X Minuten" />
+                       value="${this._minutesAgo}" title="Zeitdifferenz in Minuten" />
               </div>
             </div>
 
             <div class="action-buttons">
-              <button class="act-btn primary" data-action="start_nap" ${this._busyAction ? "disabled" : ""}>
+              <button class="act-btn ${summary.is_sleeping ? "primary" : ""}"
+                      data-action="wake_up"
+                      ${!summary.is_sleeping || this._busyAction ? "disabled" : ""}
+                      title="${summary.is_sleeping ? "Aktuelles Nickerchen oder Nachtschlaf beenden" : "Nur aktiv, wenn das Kind gerade schläft"}">
+                ☀️ Aufwachen ${this._minutesAgo > 0 ? `(-${this._minutesAgo}m)` : ""}
+              </button>
+              <button class="act-btn ${!summary.is_sleeping ? "primary" : ""}"
+                      data-action="start_nap"
+                      ${summary.is_sleeping || this._busyAction ? "disabled" : ""}
+                      title="${!summary.is_sleeping ? "Nickerchen starten" : "Nicht möglich, da das Kind bereits schläft"}">
                 ☁️ Nickerchen starten ${this._minutesAgo > 0 ? `(-${this._minutesAgo}m)` : ""}
               </button>
-              <button class="act-btn" data-action="stop_sleep" ${this._busyAction ? "disabled" : ""}>
-                ⏹️ Schlaf beenden ${this._minutesAgo > 0 ? `(-${this._minutesAgo}m)` : ""}
-              </button>
-              <button class="act-btn" data-action="log_wake_up" ${this._busyAction ? "disabled" : ""}>
-                ☀️ Aufgewacht ${this._minutesAgo > 0 ? `(-${this._minutesAgo}m)` : ""}
-              </button>
-              <button class="act-btn" data-action="log_bedtime" ${this._busyAction ? "disabled" : ""}>
-                🌙 Ins Bett ${this._minutesAgo > 0 ? `(-${this._minutesAgo}m)` : ""}
+              <button class="act-btn"
+                      data-action="start_sleep"
+                      ${summary.is_sleeping || this._busyAction ? "disabled" : ""}
+                      title="${!summary.is_sleeping ? "Nachtschlaf starten" : "Nicht möglich, da das Kind bereits schläft"}">
+                🌙 Schlafen starten ${this._minutesAgo > 0 ? `(-${this._minutesAgo}m)` : ""}
               </button>
             </div>
           </div>
@@ -771,12 +848,14 @@ class NapperCircleCard extends HTMLElement {
     `;
 
     // Bind event listeners
-    this.shadowRoot.querySelectorAll(".baby-avatar").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        this._selectedEntityId = btn.getAttribute("data-entity");
-        this._render();
+    if (this._config.show_baby_tabs) {
+      this.shadowRoot.querySelectorAll(".baby-avatar").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          this._selectedEntityId = btn.getAttribute("data-entity");
+          this._render();
+        });
       });
-    });
+    }
 
     this.shadowRoot.querySelectorAll(".chip").forEach((chip) => {
       chip.addEventListener("click", () => {
@@ -804,6 +883,163 @@ class NapperCircleCard extends HTMLElement {
   }
 }
 
+class NapperCircleCardEditor extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._config = {};
+    this._hass = null;
+  }
+
+  setConfig(config) {
+    this._config = { ...config };
+    this._render();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._render();
+  }
+
+  _findBabies() {
+    if (!this._hass || !this._hass.states) return [];
+    const byId = new Map();
+    for (const st of Object.values(this._hass.states)) {
+      const s = st?.attributes?.summary;
+      if (s && s.baby_id && s.circle && !byId.has(s.baby_id)) {
+        byId.set(s.baby_id, {
+          baby_id: s.baby_id,
+          baby_name: s.baby_name || s.baby_id,
+          entity_id: st.entity_id,
+        });
+      }
+    }
+    return Array.from(byId.values());
+  }
+
+  _emitConfig(newConfig) {
+    this._config = newConfig;
+    this.dispatchEvent(
+      new CustomEvent("config-changed", {
+        detail: { config: newConfig },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+
+  _render() {
+    if (!this.shadowRoot) return;
+    const babies = this._findBabies();
+    const currentBaby = this._config.baby || this._config.baby_id || "";
+    const showNapList = this._config.show_nap_list !== false;
+    const showActions = this._config.show_actions !== false;
+
+    this.shadowRoot.innerHTML = `
+      <style>
+        .editor {
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+          padding: 12px 4px;
+          font-family: inherit;
+        }
+        .field {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+        label {
+          font-weight: 600;
+          font-size: 14px;
+        }
+        select {
+          padding: 8px 10px;
+          border-radius: 8px;
+          border: 1px solid var(--divider-color, #ccc);
+          background: var(--card-background-color, #fff);
+          color: var(--primary-text-color, #000);
+          font-size: 14px;
+        }
+        .checkbox-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 14px;
+        }
+      </style>
+      <div class="editor">
+        <div class="field">
+          <label for="baby-select">Kind auswählen:</label>
+          <select id="baby-select">
+            <option value="" ${currentBaby === "" ? "selected" : ""}>
+              Alle Kinder (mit Tab-Umschalter)
+            </option>
+            ${babies
+              .map(
+                (b) => `
+              <option value="${b.baby_name}" ${
+                  currentBaby.toLowerCase() === b.baby_name.toLowerCase() ||
+                  currentBaby === b.baby_id
+                    ? "selected"
+                    : ""
+                }>
+                Nur ${b.baby_name} (Einzelkarte)
+              </option>
+            `
+              )
+              .join("")}
+          </select>
+        </div>
+
+        <label class="checkbox-row">
+          <input type="checkbox" id="chk-nap-list" ${showNapList ? "checked" : ""} />
+          Nickerchen-Liste unter dem Kreis anzeigen
+        </label>
+
+        <label class="checkbox-row">
+          <input type="checkbox" id="chk-actions" ${showActions ? "checked" : ""} />
+          Aktions-Buttons (Jetzt / Vor X Min.) anzeigen
+        </label>
+      </div>
+    `;
+
+    const sel = this.shadowRoot.querySelector("#baby-select");
+    if (sel) {
+      sel.addEventListener("change", (e) => {
+        const val = e.target.value;
+        const next = { ...this._config };
+        delete next.entity;
+        delete next.baby_id;
+        if (val) {
+          next.baby = val;
+        } else {
+          delete next.baby;
+        }
+        this._emitConfig(next);
+      });
+    }
+
+    const chkNap = this.shadowRoot.querySelector("#chk-nap-list");
+    if (chkNap) {
+      chkNap.addEventListener("change", (e) => {
+        this._emitConfig({ ...this._config, show_nap_list: e.target.checked });
+      });
+    }
+
+    const chkAct = this.shadowRoot.querySelector("#chk-actions");
+    if (chkAct) {
+      chkAct.addEventListener("change", (e) => {
+        this._emitConfig({ ...this._config, show_actions: e.target.checked });
+      });
+    }
+  }
+}
+
+if (!customElements.get("napper-circle-card-editor")) {
+  customElements.define("napper-circle-card-editor", NapperCircleCardEditor);
+}
+
 if (!customElements.get("napper-circle-card")) {
   customElements.define("napper-circle-card", NapperCircleCard);
 }
@@ -814,6 +1050,6 @@ if (!window.customCards.some((c) => c.type === "napper-circle-card")) {
     type: "napper-circle-card",
     name: "Napper Schlafkreis (Baby Sleep Circle)",
     preview: true,
-    description: "Zeigt den Napper-Schlafkreis mit Aufwachzeit, Nickerchen, Countdown und Aktionen auf Deutsch.",
+    description: "Zeigt den Napper-Schlafkreis (für alle Kinder oder ein einzelnes Kind) auf Deutsch.",
   });
 }

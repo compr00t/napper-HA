@@ -14,7 +14,9 @@ CONF_USER_ID = "user_id"
 DEFAULT_SCAN_INTERVAL_SECONDS = 60
 MAX_NAP_SENSORS = 4
 
+SERVICE_WAKE_UP = "wake_up"
 SERVICE_START_NAP = "start_nap"
+SERVICE_START_SLEEP = "start_sleep"
 SERVICE_STOP_SLEEP = "stop_sleep"
 SERVICE_LOG_BEDTIME = "log_bedtime"
 SERVICE_LOG_WAKE_UP = "log_wake_up"

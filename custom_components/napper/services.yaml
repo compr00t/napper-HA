@@ -1,6 +1,6 @@
-start_nap:
-  name: Nickerchen starten
-  description: Startet ein Nickerchen für ein Kind – entweder sofort oder vor X Minuten in der Vergangenheit.
+wake_up:
+  name: Aufwachen
+  description: Beendet das aktuell laufende Nickerchen oder den Nachtschlaf (nur möglich, wenn das Kind gerade schläft) – sofort oder mit Zeitdifferenz in der Vergangenheit.
   fields:
     baby_id:
       name: Kind (Baby-ID oder Name)
@@ -10,33 +10,8 @@ start_nap:
       selector:
         text:
     minutes_ago:
-      name: Vor X Minuten
-      description: "0 = Jetzt sofort, > 0 = vor X Minuten in der Vergangenheit gestartet."
-      required: false
-      default: 0
-      example: 15
-      selector:
-        number:
-          min: 0
-          max: 720
-          step: 1
-          unit_of_measurement: "Min."
-          mode: box
-
-stop_sleep:
-  name: Nickerchen / Schlaf beenden
-  description: Beendet das aktuell laufende Nickerchen oder den Schlaf – entweder sofort oder vor X Minuten in der Vergangenheit.
-  fields:
-    baby_id:
-      name: Kind (Baby-ID oder Name)
-      description: Die Napper Baby-ID oder der Name des Kindes (z. B. "Max").
-      required: false
-      example: "Max"
-      selector:
-        text:
-    minutes_ago:
-      name: Vor X Minuten
-      description: "0 = Jetzt sofort beenden, > 0 = vor X Minuten in der Vergangenheit beendet."
+      name: Zeitdifferenz
+      description: "0 = Jetzt sofort, > 0 = vor X Minuten aufgewacht (falls 0, wird die 'Zeitdifferenz'-Entität des Kindes verwendet)."
       required: false
       default: 0
       example: 10
@@ -48,23 +23,23 @@ stop_sleep:
           unit_of_measurement: "Min."
           mode: box
 
-log_bedtime:
-  name: Schlafenszeit eintragen (Ins Bett gehen)
-  description: Trägt das Zubettgehen (Nachtschlaf) ein – entweder sofort oder vor X Minuten in der Vergangenheit.
+start_nap:
+  name: Nickerchen starten
+  description: Startet ein Nickerchen für ein Kind (nur möglich, wenn das Kind aktuell nicht schläft) – sofort oder mit Zeitdifferenz in der Vergangenheit.
   fields:
     baby_id:
       name: Kind (Baby-ID oder Name)
-      description: Die Napper Baby-ID oder der Name des Kindes (z. B. "Max").
+      description: Die Napper Baby-ID oder der Name des Kindes (z. B. "Max"). Wenn leer, wird das erste Kind verwendet.
       required: false
       example: "Max"
       selector:
         text:
     minutes_ago:
-      name: Vor X Minuten
-      description: "0 = Jetzt sofort, > 0 = vor X Minuten ins Bett gegangen."
+      name: Zeitdifferenz
+      description: "0 = Jetzt sofort, > 0 = vor X Minuten gestartet (falls 0, wird die 'Zeitdifferenz'-Entität des Kindes verwendet)."
       required: false
       default: 0
-      example: 20
+      example: 15
       selector:
         number:
           min: 0
@@ -73,23 +48,23 @@ log_bedtime:
           unit_of_measurement: "Min."
           mode: box
 
-log_wake_up:
-  name: Aufwachen eintragen
-  description: Trägt das morgendliche Aufwachen ein (und beendet ggf. den offenen Nachtschlaf) – sofort oder vor X Minuten in der Vergangenheit.
+start_sleep:
+  name: Schlafen starten
+  description: Startet den Nachtschlaf für ein Kind (nur möglich, wenn das Kind aktuell nicht schläft) – sofort oder mit Zeitdifferenz in der Vergangenheit.
   fields:
     baby_id:
       name: Kind (Baby-ID oder Name)
-      description: Die Napper Baby-ID oder der Name des Kindes (z. B. "Max").
+      description: Die Napper Baby-ID oder der Name des Kindes (z. B. "Max"). Wenn leer, wird das erste Kind verwendet.
       required: false
       example: "Max"
       selector:
         text:
     minutes_ago:
-      name: Vor X Minuten
-      description: "0 = Jetzt sofort aufgewacht, > 0 = vor X Minuten aufgewacht."
+      name: Zeitdifferenz
+      description: "0 = Jetzt sofort, > 0 = vor X Minuten eingeschlafen (falls 0, wird die 'Zeitdifferenz'-Entität des Kindes verwendet)."
       required: false
       default: 0
-      example: 15
+      example: 20
       selector:
         number:
           min: 0

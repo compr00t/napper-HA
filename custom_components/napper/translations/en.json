@@ -2,40 +2,24 @@
   "config": {
     "step": {
       "user": {
-        "title": "Napper Login Method",
-        "description": "Choose how to authenticate with your Napper account.",
-        "menu_options": {
-          "email": "Sign in with Email (6-digit OTP code)",
-          "token": "Sign in with existing Refresh Token (napper_auth.json)"
-        }
-      },
-      "email": {
-        "title": "Napper Email Sign-In",
-        "description": "Enter your Napper account email (or Apple Private Relay email). Napper will send a 6-digit login code.",
+        "title": "Napper Login",
+        "description": "Enter your Napper email address (Apple Private Relay addresses are also supported). Napper will send you a 6-digit code.",
         "data": {
-          "email": "Email"
+          "email": "Email address"
         }
       },
       "otp": {
-        "title": "Enter 6-Digit Code",
+        "title": "Enter 6-digit code",
         "description": "Enter the 6-digit code sent to {email}.",
         "data": {
-          "otp": "6-Digit OTP Code"
-        }
-      },
-      "token": {
-        "title": "Napper Token Sign-In",
-        "description": "Paste your idToken and refreshToken from napper_auth.json.",
-        "data": {
-          "id_token": "ID Token (JWT)",
-          "refresh_token": "Refresh Token",
-          "device_id": "Device ID (optional)"
+          "otp": "6-digit verification code"
         }
       }
     },
     "error": {
-      "cannot_connect": "Failed to connect to Napper API. Please check your input.",
-      "invalid_auth": "Invalid code or expired tokens."
+      "cannot_connect": "Failed to connect to the Napper API. Please check your input.",
+      "invalid_auth": "Invalid verification code or expired token.",
+      "unknown": "An unexpected error occurred."
     },
     "abort": {
       "already_configured": "This Napper account is already configured."

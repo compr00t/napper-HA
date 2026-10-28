@@ -1,10 +1,11 @@
-"""Button platform for Napper (Nickerchen starten/beenden, Aufwachen, Schlafenszeit)."""
+"""Button platform for Napper (Aufwachen, Nickerchen starten, Schlafen starten)."""
 
 from __future__ import annotations
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -20,21 +21,26 @@ async def async_setup_entry(
 ) -> None:
     """Set up Napper action buttons for each child."""
     coordinator: NapperCoordinator = hass.data[DOMAIN][entry.entry_id]
+    ent_reg = er.async_get(hass)
     entities: list[ButtonEntity] = []
     for baby_id in coordinator.babies:
+        # Clean up legacy 4th button ('stop_sleep') if present in registry
+        old_entity_id = ent_reg.async_get_entity_id("button", DOMAIN, f"{baby_id}_stop_sleep")
+        if old_entity_id:
+            ent_reg.async_remove(old_entity_id)
+
         entities.extend(
             [
-                NapperStartNapButton(coordinator, baby_id),
-                NapperStopSleepButton(coordinator, baby_id),
-                NapperBedtimeButton(coordinator, baby_id),
                 NapperWakeUpButton(coordinator, baby_id),
+                NapperStartNapButton(coordinator, baby_id),
+                NapperStartSleepButton(coordinator, baby_id),
             ]
         )
     async_add_entities(entities)
 
 
 class NapperBaseButton(CoordinatorEntity[NapperCoordinator], ButtonEntity):
-    """Base button for Napper actions (uses the child's 'Vor X Minuten' offset if > 0)."""
+    """Base button for Napper actions (uses the child's 'Zeitdifferenz' offset if > 0)."""
 
     _attr_has_entity_name = True
 
@@ -54,8 +60,27 @@ class NapperBaseButton(CoordinatorEntity[NapperCoordinator], ButtonEntity):
         )
 
 
+class NapperWakeUpButton(NapperBaseButton):
+    """Button to end whichever sleep (nap or night sleep) is currently running."""
+
+    _attr_name = "Aufwachen"
+    _attr_icon = "mdi:weather-sunset-up"
+
+    def __init__(self, coordinator: NapperCoordinator, baby_id: str) -> None:
+        super().__init__(coordinator, baby_id, "log_wake_up")
+
+    @property
+    def available(self) -> bool:
+        """Only available when a nap or night sleep is currently active."""
+        return super().available and self.coordinator.is_child_sleeping(self._baby_id)
+
+    async def async_press(self) -> None:
+        minutes_ago = self.coordinator.pop_minutes_ago(self._baby_id)
+        await self.coordinator.async_wake_up(self._baby_id, minutes_ago=minutes_ago)
+
+
 class NapperStartNapButton(NapperBaseButton):
-    """Button to start an open nap timer (now or X minutes ago)."""
+    """Button to start an open nap timer (only when child is not sleeping)."""
 
     _attr_name = "Nickerchen starten"
     _attr_icon = "mdi:play-circle-outline"
@@ -63,62 +88,30 @@ class NapperStartNapButton(NapperBaseButton):
     def __init__(self, coordinator: NapperCoordinator, baby_id: str) -> None:
         super().__init__(coordinator, baby_id, "start_nap")
 
-    async def async_press(self) -> None:
-        minutes_ago = self.coordinator.pop_minutes_ago(self._baby_id)
-        await self.coordinator.client.async_start_open_nap(
-            self._baby_id, minutes_ago=minutes_ago
-        )
-        await self.coordinator.async_request_refresh()
-
-
-class NapperStopSleepButton(NapperBaseButton):
-    """Button to stop the currently active nap or sleep timer (now or X minutes ago)."""
-
-    _attr_name = "Nickerchen / Schlaf beenden"
-    _attr_icon = "mdi:stop-circle-outline"
-
-    def __init__(self, coordinator: NapperCoordinator, baby_id: str) -> None:
-        super().__init__(coordinator, baby_id, "stop_sleep")
+    @property
+    def available(self) -> bool:
+        """Only available when the child is not currently sleeping."""
+        return super().available and not self.coordinator.is_child_sleeping(self._baby_id)
 
     async def async_press(self) -> None:
         minutes_ago = self.coordinator.pop_minutes_ago(self._baby_id)
-        logs = self.coordinator.data.get(self._baby_id, {}).get("logs")
-        await self.coordinator.client.async_stop_open_sleep(
-            self._baby_id, current_logs=logs, minutes_ago=minutes_ago
-        )
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.async_start_nap(self._baby_id, minutes_ago=minutes_ago)
 
 
-class NapperBedtimeButton(NapperBaseButton):
-    """Button to start nighttime sleep / BED_TIME (now or X minutes ago)."""
+class NapperStartSleepButton(NapperBaseButton):
+    """Button to start nighttime sleep / BED_TIME (only when child is not sleeping)."""
 
-    _attr_name = "Schlafenszeit eintragen"
+    _attr_name = "Schlafen starten"
     _attr_icon = "mdi:bed-clock"
 
     def __init__(self, coordinator: NapperCoordinator, baby_id: str) -> None:
         super().__init__(coordinator, baby_id, "log_bedtime")
 
-    async def async_press(self) -> None:
-        minutes_ago = self.coordinator.pop_minutes_ago(self._baby_id)
-        await self.coordinator.client.async_start_bedtime(
-            self._baby_id, minutes_ago=minutes_ago
-        )
-        await self.coordinator.async_request_refresh()
-
-
-class NapperWakeUpButton(NapperBaseButton):
-    """Button to log morning wake-up / WOKE_UP (now or X minutes ago)."""
-
-    _attr_name = "Aufwachen eintragen"
-    _attr_icon = "mdi:weather-sunset-up"
-
-    def __init__(self, coordinator: NapperCoordinator, baby_id: str) -> None:
-        super().__init__(coordinator, baby_id, "log_wake_up")
+    @property
+    def available(self) -> bool:
+        """Only available when the child is not currently sleeping."""
+        return super().available and not self.coordinator.is_child_sleeping(self._baby_id)
 
     async def async_press(self) -> None:
         minutes_ago = self.coordinator.pop_minutes_ago(self._baby_id)
-        logs = self.coordinator.data.get(self._baby_id, {}).get("logs")
-        await self.coordinator.client.async_log_woke_up(
-            self._baby_id, current_logs=logs, minutes_ago=minutes_ago
-        )
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.async_start_sleep(self._baby_id, minutes_ago=minutes_ago)

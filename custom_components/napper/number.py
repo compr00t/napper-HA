@@ -1,4 +1,4 @@
-"""Number platform for Napper ('Vor X Minuten' time offset for actions)."""
+"""Number platform for Napper ('Zeitdifferenz' time offset for actions)."""
 
 from __future__ import annotations
 
@@ -29,10 +29,10 @@ async def async_setup_entry(
 
 
 class NapperMinutesAgoNumber(CoordinatorEntity[NapperCoordinator], NumberEntity):
-    """Number entity representing 'X minutes in the past' when pressing action buttons."""
+    """Number entity representing 'Zeitdifferenz' (minutes in the past) when pressing action buttons."""
 
     _attr_has_entity_name = True
-    _attr_name = "Vor X Minuten (Zeitversatz)"
+    _attr_name = "Zeitdifferenz"
     _attr_icon = "mdi:history"
     _attr_native_min_value = 0
     _attr_native_max_value = 360

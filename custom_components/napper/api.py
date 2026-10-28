@@ -346,21 +346,50 @@ class NapperApiClient:
         await self.async_put_log(baby_id, log)
         return log
 
-    async def async_log_woke_up(
+    async def async_wake_up(
         self,
         baby_id: str,
         current_logs: list[dict[str, Any]] | None = None,
         wake_dt: datetime.datetime | None = None,
         minutes_ago: int | float = 0,
     ) -> dict[str, Any]:
+        """Wake up from whatever sleep is currently running (ends open nap OR ends night sleep & logs WOKE_UP)."""
         dt = resolve_target_datetime(wake_dt, minutes_ago)
-        iso = get_time_with_timezone(dt)
         if current_logs is None:
             today = await self.async_get_today(baby_id)
             current_logs = today.get("logs", today.get("allLogs", []))
 
+        # 1. If an open NAP is running, end that nap
+        open_naps = [
+            entry
+            for entry in current_logs
+            if entry.get("isOpen") and not entry.get("skipped") and entry.get("category") == "NAP"
+        ]
+        if open_naps:
+            current_nap = open_naps[0]
+            try:
+                start_parsed = datetime.datetime.fromisoformat(
+                    current_nap["start"].replace("Z", "+00:00")
+                )
+                if dt < start_parsed:
+                    dt = start_parsed + datetime.timedelta(minutes=1)
+            except Exception:
+                pass
+            end_iso = get_time_with_timezone(dt)
+            updated = dict(current_nap)
+            updated["end"] = end_iso
+            updated["isOpen"] = False
+            await self.async_put_log(baby_id, updated)
+            return updated
+
+        # 2. Otherwise, end night sleep (close any open BED_TIME/NIGHT_WAKING) and create WOKE_UP log
+        iso = get_time_with_timezone(dt)
         for entry in current_logs:
-            if entry.get("isOpen") and entry.get("category") in ("BED_TIME", "NAP", "NIGHT_WAKING"):
+            if (
+                entry.get("isOpen")
+                and not entry.get("skipped")
+                and entry.get("category") in ("BED_TIME", "NIGHT_WAKING")
+            ):
                 closed = dict(entry)
                 closed["end"] = iso
                 closed["isOpen"] = False
@@ -377,3 +406,15 @@ class NapperApiClient:
         )
         await self.async_put_log(baby_id, log)
         return log
+
+    async def async_log_woke_up(
+        self,
+        baby_id: str,
+        current_logs: list[dict[str, Any]] | None = None,
+        wake_dt: datetime.datetime | None = None,
+        minutes_ago: int | float = 0,
+    ) -> dict[str, Any]:
+        """Alias for async_wake_up."""
+        return await self.async_wake_up(
+            baby_id, current_logs=current_logs, wake_dt=wake_dt, minutes_ago=minutes_ago
+        )

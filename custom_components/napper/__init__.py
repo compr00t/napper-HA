@@ -25,7 +25,9 @@ from .const import (
     SERVICE_LOG_BEDTIME,
     SERVICE_LOG_WAKE_UP,
     SERVICE_START_NAP,
+    SERVICE_START_SLEEP,
     SERVICE_STOP_SLEEP,
+    SERVICE_WAKE_UP,
     STATIC_URL_PATH,
 )
 from .coordinator import NapperCoordinator
@@ -66,6 +68,25 @@ async def _async_register_lovelace_card(hass: HomeAssistant) -> None:
         else:
             hass.http.register_static_path(CARD_URL, str(card_path), cache_headers=False)
         add_extra_js_url(hass, CARD_URL)
+
+        # Also auto-register in Lovelace storage resources if available
+        lovelace = hass.data.get("lovelace")
+        resources = getattr(lovelace, "resources", None) or (
+            lovelace.get("resources") if isinstance(lovelace, dict) else None
+        )
+        if resources is not None and hasattr(resources, "async_items"):
+            if hasattr(resources, "loaded") and not resources.loaded:
+                await resources.async_load()
+                resources.loaded = True
+            already_added = any(
+                str(item.get("url", "")).startswith(CARD_URL)
+                for item in resources.async_items()
+            )
+            if not already_added and hasattr(resources, "async_create_item"):
+                await resources.async_create_item(
+                    {"res_type": "module", "url": f"{CARD_URL}?v=1.2.0"}
+                )
+
         hass.data[DOMAIN]["_card_registered"] = True
         _LOGGER.info("Registered Napper Circle Card at %s", CARD_URL)
     except Exception as err:
@@ -117,48 +138,47 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 return coord, first_baby_id
         raise ValueError(f"Kein passendes Kind (baby_id={requested}) in Napper gefunden.")
 
+    def _resolve_minutes_ago(
+        coord: NapperCoordinator, baby_id: str, call: ServiceCall
+    ) -> int:
+        explicit = int(call.data.get("minutes_ago", 0))
+        stored = coord.pop_minutes_ago(baby_id)
+        return explicit if explicit > 0 else stored
+
+    async def _handle_wake_up(call: ServiceCall) -> None:
+        coord, baby_id = _resolve_coordinator_and_baby(call)
+        minutes_ago = _resolve_minutes_ago(coord, baby_id, call)
+        await coord.async_wake_up(baby_id, minutes_ago=minutes_ago)
+
     async def _handle_start_nap(call: ServiceCall) -> None:
         coord, baby_id = _resolve_coordinator_and_baby(call)
-        minutes_ago = int(call.data.get("minutes_ago", 0))
-        await coord.client.async_start_open_nap(baby_id, minutes_ago=minutes_ago)
-        await coord.async_request_refresh()
+        minutes_ago = _resolve_minutes_ago(coord, baby_id, call)
+        await coord.async_start_nap(baby_id, minutes_ago=minutes_ago)
 
-    async def _handle_stop_sleep(call: ServiceCall) -> None:
+    async def _handle_start_sleep(call: ServiceCall) -> None:
         coord, baby_id = _resolve_coordinator_and_baby(call)
-        minutes_ago = int(call.data.get("minutes_ago", 0))
-        current_logs = coord.data.get(baby_id, {}).get("logs")
-        await coord.client.async_stop_open_sleep(
-            baby_id, current_logs=current_logs, minutes_ago=minutes_ago
-        )
-        await coord.async_request_refresh()
-
-    async def _handle_log_bedtime(call: ServiceCall) -> None:
-        coord, baby_id = _resolve_coordinator_and_baby(call)
-        minutes_ago = int(call.data.get("minutes_ago", 0))
-        await coord.client.async_start_bedtime(baby_id, minutes_ago=minutes_ago)
-        await coord.async_request_refresh()
-
-    async def _handle_log_wake_up(call: ServiceCall) -> None:
-        coord, baby_id = _resolve_coordinator_and_baby(call)
-        minutes_ago = int(call.data.get("minutes_ago", 0))
-        current_logs = coord.data.get(baby_id, {}).get("logs")
-        await coord.client.async_log_woke_up(
-            baby_id, current_logs=current_logs, minutes_ago=minutes_ago
-        )
-        await coord.async_request_refresh()
+        minutes_ago = _resolve_minutes_ago(coord, baby_id, call)
+        await coord.async_start_sleep(baby_id, minutes_ago=minutes_ago)
 
     if not hass.services.has_service(DOMAIN, SERVICE_START_NAP):
+        hass.services.async_register(
+            DOMAIN, SERVICE_WAKE_UP, _handle_wake_up, schema=SERVICE_SCHEMA
+        )
         hass.services.async_register(
             DOMAIN, SERVICE_START_NAP, _handle_start_nap, schema=SERVICE_SCHEMA
         )
         hass.services.async_register(
-            DOMAIN, SERVICE_STOP_SLEEP, _handle_stop_sleep, schema=SERVICE_SCHEMA
+            DOMAIN, SERVICE_START_SLEEP, _handle_start_sleep, schema=SERVICE_SCHEMA
+        )
+        # Keep legacy service names mapped to the unified handlers
+        hass.services.async_register(
+            DOMAIN, SERVICE_STOP_SLEEP, _handle_wake_up, schema=SERVICE_SCHEMA
         )
         hass.services.async_register(
-            DOMAIN, SERVICE_LOG_BEDTIME, _handle_log_bedtime, schema=SERVICE_SCHEMA
+            DOMAIN, SERVICE_LOG_WAKE_UP, _handle_wake_up, schema=SERVICE_SCHEMA
         )
         hass.services.async_register(
-            DOMAIN, SERVICE_LOG_WAKE_UP, _handle_log_wake_up, schema=SERVICE_SCHEMA
+            DOMAIN, SERVICE_LOG_BEDTIME, _handle_start_sleep, schema=SERVICE_SCHEMA
         )
 
     return True

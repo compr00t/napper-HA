@@ -7,6 +7,7 @@ import logging
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import NapperApiClient, NapperApiError
@@ -81,14 +82,26 @@ def compute_day_summary(
         now = now.astimezone()
     local_tz = now.tzinfo
 
-    # 1. Inspect open sleep logs
+    # 1. Inspect open sleep logs and latest BED_TIME / WOKE_UP timestamps
     open_nap_log: dict[str, Any] | None = None
     open_bedtime_log: dict[str, Any] | None = None
     open_night_waking_log: dict[str, Any] | None = None
+    latest_bedtime_dt: datetime.datetime | None = None
+    latest_woke_up_dt: datetime.datetime | None = None
 
     for entry in logs:
-        if entry.get("isOpen") and not entry.get("skipped"):
-            cat = entry.get("category")
+        if entry.get("skipped"):
+            continue
+        cat = entry.get("category")
+        start_dt = parse_napper_iso(entry.get("start"), local_tz)
+        if cat == "BED_TIME" and start_dt is not None:
+            if latest_bedtime_dt is None or start_dt > latest_bedtime_dt:
+                latest_bedtime_dt = start_dt
+        elif cat == "WOKE_UP" and start_dt is not None:
+            if latest_woke_up_dt is None or start_dt > latest_woke_up_dt:
+                latest_woke_up_dt = start_dt
+
+        if entry.get("isOpen"):
             if cat == "NAP" and open_nap_log is None:
                 open_nap_log = entry
             elif cat == "BED_TIME" and open_bedtime_log is None:
@@ -98,6 +111,7 @@ def compute_day_summary(
 
     # 2. Find today's WOKE_UP log (or estimate expected wake-up)
     today_woke_up_log: dict[str, Any] | None = None
+    today_woke_up_dt: datetime.datetime | None = None
     recent_woke_up_minutes: list[int] = []
 
     for entry in logs:
@@ -106,8 +120,9 @@ def compute_day_summary(
             if dt is None:
                 continue
             recent_woke_up_minutes.append(dt.hour * 60 + dt.minute)
-            if today_woke_up_log is None and dt.date() == now.date():
+            if dt.date() == now.date() and (today_woke_up_dt is None or dt > today_woke_up_dt):
                 today_woke_up_log = entry
+                today_woke_up_dt = dt
 
     avg_wake_mins = (
         round(sum(recent_woke_up_minutes) / len(recent_woke_up_minutes))
@@ -331,10 +346,15 @@ def compute_day_summary(
     now_angle_deg = _ts_to_angle(now.timestamp())
 
     # 7. Sleep state & awake duration
+    unclosed_night_sleep = (
+        latest_bedtime_dt is not None
+        and (now - latest_bedtime_dt).total_seconds() <= 18 * 3600
+        and (latest_woke_up_dt is None or latest_bedtime_dt > latest_woke_up_dt)
+    )
     if open_nap_log is not None:
         sleep_state_de = "Nickerchen"
         is_sleeping = True
-    elif open_bedtime_log is not None or (bed_is_tracked and now >= bed_dt):
+    elif open_bedtime_log is not None or unclosed_night_sleep:
         sleep_state_de = "Nachtschlaf"
         is_sleeping = True
     elif open_night_waking_log is not None:
@@ -521,7 +541,44 @@ class NapperCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         """Read and reset the 'minutes ago' offset for a baby."""
         val = self.get_minutes_ago(baby_id)
         self.minutes_ago_offset[baby_id] = 0
+        self.async_update_listeners()
         return val
+
+    def is_child_sleeping(self, baby_id: str) -> bool:
+        """Return True if the child is currently in a nap or night sleep."""
+        if not self.data or baby_id not in self.data:
+            return False
+        return bool(self.data[baby_id].get("summary", {}).get("is_sleeping", False))
+
+    async def async_start_nap(self, baby_id: str, minutes_ago: int = 0) -> None:
+        """Start a nap only if the child is not currently sleeping."""
+        if self.is_child_sleeping(baby_id):
+            raise HomeAssistantError(
+                "Nickerchen kann nicht gestartet werden, da das Kind bereits schläft."
+            )
+        await self.client.async_start_open_nap(baby_id, minutes_ago=minutes_ago)
+        await self.async_request_refresh()
+
+    async def async_start_sleep(self, baby_id: str, minutes_ago: int = 0) -> None:
+        """Start night sleep only if the child is not currently sleeping."""
+        if self.is_child_sleeping(baby_id):
+            raise HomeAssistantError(
+                "Nachtschlaf kann nicht gestartet werden, da das Kind bereits schläft."
+            )
+        await self.client.async_start_bedtime(baby_id, minutes_ago=minutes_ago)
+        await self.async_request_refresh()
+
+    async def async_wake_up(self, baby_id: str, minutes_ago: int = 0) -> None:
+        """Wake up (end active nap or night sleep) only if currently sleeping."""
+        if not self.is_child_sleeping(baby_id):
+            raise HomeAssistantError(
+                "Aufwachen ist nur möglich, wenn gerade ein Nickerchen oder Nachtschlaf läuft."
+            )
+        logs = (self.data or {}).get(baby_id, {}).get("logs")
+        await self.client.async_wake_up(
+            baby_id, current_logs=logs, minutes_ago=minutes_ago
+        )
+        await self.async_request_refresh()
 
     async def _async_update_data(self) -> dict[str, dict[str, Any]]:
         """Fetch the latest logs and predicted schedule for each baby."""
