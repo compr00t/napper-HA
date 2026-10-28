@@ -10,12 +10,12 @@ Diese benutzerdefinierte Home Assistant Integration verbindet dein **Napper**-Ko
   - Zeigt die vertikale Tages-Timeline mit **Aufwachzeit**, allen geplanten/getrackten **Nickerchen** (`1. Nickerchen`, `2. Nickerchen`, … – ohne ungeplante Einträge) sowie der **Schlafenszeit**.
   - Vergangene (getrackte) Ereignisse werden mit ihrer tatsächlichen Zeit und Dauer dargestellt, zukünftige Vorhersagen kursiv mit erwarteter Dauer (`~30m`).
   - Der **aktuelle Zeitpunkt** wird auf der Timeline visuell hervorgehoben (pulsierender `Jetzt`-Marker zwischen vergangenen und zukünftigen Ereignissen bzw. Hervorhebung des aktuell laufenden Schlafs).
-  - Untere Aktionsleiste mit den drei Buttons **Aufwachen**, **Nickerchen starten** und **Schlafen starten**.
+  - Untere Aktionsleiste mit den drei Buttons **Aufwachen**, **Nickerchen** und **Schlafen**.
   - Unterstützt sowohl eine gemeinsame Karte (mit Kinder-Umschalter) als auch eine Einzelkarte pro Kind (`baby: "Max"`).
 - **Aktionen sofort, mit `Zeitdifferenz` oder zu einer absoluten `Uhrzeit` (z. B. `17:37`)**:
   - **Aufwachen** (beendet das aktuell laufende Nickerchen oder den Nachtschlaf – **nur aktiv, wenn das Kind gerade schläft**)
-  - **Nickerchen starten** (startet ein Nickerchen – **nur aktiv, wenn das Kind aktuell nicht schläft**)
-  - **Schlafen starten** (startet den Nachtschlaf – **nur aktiv, wenn das Kind aktuell nicht schläft**)
+  - **Nickerchen** (startet ein Nickerchen – **nur aktiv, wenn das Kind aktuell nicht schläft**)
+  - **Schlafen** (startet den Nachtschlaf – **nur aktiv, wenn das Kind aktuell nicht schläft**)
   - Alle drei Buttons arbeiten sowohl mit dem **`Zeitdifferenz`**-Schieberegler (`number`, `0–120 min`) als auch mit der **`Uhrzeit`**-Auswahl (`time`, z. B. `17:37`), über die Regler/Zeitauswahl in der Karte oder per Service-Aufruf (`minutes_ago` bzw. `time`).
 - **Komplett auf Deutsch**: Alle Entitätsnamen, Zustände, Attribute, Buttons, Services und die Lovelace-Karte sind auf Deutsch.
 
@@ -59,8 +59,8 @@ Für jedes Kind in deinem Napper-Konto wird automatisch ein eigenes Gerät angel
 | `number` | `number.max_zeitdifferenz` | **Zeitdifferenz** (Schieberegler `0–120 min`) für den nächsten Button-Klick (setzt sich nach Klick automatisch auf `0` zurück) | `0 min` |
 | `time` | `time.max_uhrzeit` | **Uhrzeit** (Uhrzeit-Auswahl, z. B. `17:37`) für den nächsten Button-Klick (leert sich nach Klick automatisch) | `17:37:00` |
 | `button` | `button.max_aufwachen` | **Aufwachen** – beendet ein laufendes Nickerchen oder den Nachtschlaf (nutzt `Uhrzeit` oder `Zeitdifferenz`; nur aktiv, wenn das Kind gerade schläft) | – |
-| `button` | `button.max_nickerchen_starten` | **Nickerchen starten** (nutzt `Uhrzeit` oder `Zeitdifferenz`; nur aktiv, wenn das Kind nicht schläft) | – |
-| `button` | `button.max_schlafen_starten` | **Schlafen starten** – startet den Nachtschlaf (nutzt `Uhrzeit` oder `Zeitdifferenz`; nur aktiv, wenn das Kind nicht schläft) | – |
+| `button` | `button.max_nickerchen_starten` | **Nickerchen** – startet ein Nickerchen (nutzt `Uhrzeit` oder `Zeitdifferenz`; nur aktiv, wenn das Kind nicht schläft) | – |
+| `button` | `button.max_schlafen_starten` | **Schlafen** – startet den Nachtschlaf (nutzt `Uhrzeit` oder `Zeitdifferenz`; nur aktiv, wenn das Kind nicht schläft) | – |
 
 ---
 

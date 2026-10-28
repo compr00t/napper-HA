@@ -84,7 +84,7 @@ class NapperWakeUpButton(NapperBaseButton):
 class NapperStartNapButton(NapperBaseButton):
     """Button to start an open nap timer (only when child is not sleeping)."""
 
-    _attr_name = "Nickerchen starten"
+    _attr_name = "Nickerchen"
     _attr_icon = "mdi:play-circle-outline"
 
     def __init__(self, coordinator: NapperCoordinator, baby_id: str) -> None:
@@ -105,7 +105,7 @@ class NapperStartNapButton(NapperBaseButton):
 class NapperStartSleepButton(NapperBaseButton):
     """Button to start nighttime sleep / BED_TIME (only when child is not sleeping)."""
 
-    _attr_name = "Schlafen starten"
+    _attr_name = "Schlafen"
     _attr_icon = "mdi:bed-clock"
 
     def __init__(self, coordinator: NapperCoordinator, baby_id: str) -> None:

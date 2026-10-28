@@ -698,7 +698,7 @@ class NapperCard extends HTMLElement {
                     ${isSleeping || this._busyAction ? "disabled" : ""}
                     title="${!isSleeping ? "Nickerchen starten" : "Nicht möglich, da das Kind bereits schläft"}">
               <span class="action-icon">💤</span>
-              <span class="action-label">Nickerchen starten</span>
+              <span class="action-label">Nickerchen</span>
             </button>
 
             <button class="action-btn"
@@ -706,7 +706,7 @@ class NapperCard extends HTMLElement {
                     ${isSleeping || this._busyAction ? "disabled" : ""}
                     title="${!isSleeping ? "Nachtschlaf starten" : "Nicht möglich, da das Kind bereits schläft"}">
               <span class="action-icon">🌙</span>
-              <span class="action-label">Schlafen starten</span>
+              <span class="action-label">Schlafen</span>
             </button>
           </div>
         `
@@ -851,7 +851,7 @@ class NapperCardEditor extends HTMLElement {
 
         <label class="checkbox-row">
           <input type="checkbox" id="chk-actions" ${showActions ? "checked" : ""} />
-          Aktions-Buttons (Aufwachen / Nickerchen starten / Schlafen starten) anzeigen
+          Aktions-Buttons (Aufwachen / Nickerchen / Schlafen) anzeigen
         </label>
       </div>
     `;
