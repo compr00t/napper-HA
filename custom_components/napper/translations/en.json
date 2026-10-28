@@ -1,0 +1,44 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Napper Login Method",
+        "description": "Choose how to authenticate with your Napper account.",
+        "menu_options": {
+          "email": "Sign in with Email (6-digit OTP code)",
+          "token": "Sign in with existing Refresh Token (napper_auth.json)"
+        }
+      },
+      "email": {
+        "title": "Napper Email Sign-In",
+        "description": "Enter your Napper account email (or Apple Private Relay email). Napper will send a 6-digit login code.",
+        "data": {
+          "email": "Email"
+        }
+      },
+      "otp": {
+        "title": "Enter 6-Digit Code",
+        "description": "Enter the 6-digit code sent to {email}.",
+        "data": {
+          "otp": "6-Digit OTP Code"
+        }
+      },
+      "token": {
+        "title": "Napper Token Sign-In",
+        "description": "Paste your idToken and refreshToken from napper_auth.json.",
+        "data": {
+          "id_token": "ID Token (JWT)",
+          "refresh_token": "Refresh Token",
+          "device_id": "Device ID (optional)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to Napper API. Please check your input.",
+      "invalid_auth": "Invalid code or expired tokens."
+    },
+    "abort": {
+      "already_configured": "This Napper account is already configured."
+    }
+  }
+}

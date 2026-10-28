@@ -1,0 +1,48 @@
+# Credentials & sensitive local data
+napper_auth.json
+*auth*.json
+*.pem
+*.key
+.env
+.env.*
+
+# App binaries & screenshots/dumps
+*.apk
+*.png
+*.jpg
+*.jpeg
+napper_*_today.json
+napper_*_predict.json
+napper_*_logs_day.json
+
+# Python bytecode & packaging
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Testing & linters
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# macOS & IDEs
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.vscode/
+.idea/
+*.swp
+*.swo

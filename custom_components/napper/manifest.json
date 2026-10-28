@@ -1,0 +1,12 @@
+{
+  "domain": "napper",
+  "name": "Napper Baby Schlaf-Tracker",
+  "codeowners": ["@patrick"],
+  "config_flow": true,
+  "dependencies": ["http", "frontend"],
+  "documentation": "https://github.com/patrick/ha-napper",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/patrick/ha-napper/issues",
+  "requirements": [],
+  "version": "1.1.0"
+}

@@ -1,0 +1,44 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Napper Anmeldung",
+        "description": "Wähle aus, wie du dein Napper-Konto verbinden möchtest.",
+        "menu_options": {
+          "email": "Anmeldung per E-Mail (6-stelliger Einmalcode)",
+          "token": "Anmeldung mit gespeichertem Refresh-Token (napper_auth.json)"
+        }
+      },
+      "email": {
+        "title": "Napper E-Mail-Anmeldung",
+        "description": "Gib deine Napper E-Mail-Adresse ein (auch Apple Private Relay Adressen werden unterstützt). Napper sendet dir einen 6-stelligen Code.",
+        "data": {
+          "email": "E-Mail-Adresse"
+        }
+      },
+      "otp": {
+        "title": "6-stelligen Code eingeben",
+        "description": "Gib den 6-stelligen Code ein, der an {email} gesendet wurde.",
+        "data": {
+          "otp": "6-stelliger Bestätigungscode"
+        }
+      },
+      "token": {
+        "title": "Napper Token-Anmeldung",
+        "description": "Füge dein idToken und refreshToken aus der Datei napper_auth.json ein.",
+        "data": {
+          "id_token": "ID-Token (JWT)",
+          "refresh_token": "Refresh-Token",
+          "device_id": "Geräte-ID (optional)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung zur Napper-API fehlgeschlagen. Bitte überprüfe deine Eingaben.",
+      "invalid_auth": "Ungültiger Bestätigungscode oder abgelaufenes Token."
+    },
+    "abort": {
+      "already_configured": "Dieses Napper-Konto ist bereits eingerichtet."
+    }
+  }
+}
