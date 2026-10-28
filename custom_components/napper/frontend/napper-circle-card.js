@@ -292,7 +292,7 @@ class NapperCard extends HTMLElement {
     const stateObj = this._getActiveStateObj();
     if (!stateObj || !stateObj.attributes?.summary) {
       this.shadowRoot.innerHTML = `
-        <ha-card style="background:#1c1c1e;color:#e5e5ea;padding:22px;border-radius:16px;">
+        <ha-card style="padding:22px;">
           <div>Napper-Daten werden geladen…</div>
         </ha-card>
       `;
@@ -318,15 +318,17 @@ class NapperCard extends HTMLElement {
       <style>
         :host {
           display: block;
-          font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+          font-family: var(--paper-font-body1_-_font-family, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif);
         }
         ha-card {
-          background: #1c1c1e;
-          color: #f2f2f7;
-          border-radius: 16px;
-          padding: 24px 22px 18px;
-          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-          border: 1px solid rgba(255, 255, 255, 0.06);
+          background: var(--ha-card-background, var(--card-background-color, #ffffff));
+          color: var(--primary-text-color, #1c1c1e);
+          border-radius: var(--ha-card-border-radius, 12px);
+          padding: 22px 20px 16px;
+          box-shadow: var(--ha-card-box-shadow, none);
+          border-width: var(--ha-card-border-width, 1px);
+          border-style: solid;
+          border-color: var(--ha-card-border-color, var(--divider-color, rgba(0, 0, 0, 0.12)));
           box-sizing: border-box;
         }
         .baby-tabs {
@@ -336,9 +338,9 @@ class NapperCard extends HTMLElement {
           flex-wrap: wrap;
         }
         .baby-tab {
-          background: #2c2c2e;
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          color: #aeaeb2;
+          background: var(--secondary-background-color, rgba(127, 127, 127, 0.08));
+          border: 1px solid var(--divider-color, rgba(127, 127, 127, 0.22));
+          color: var(--secondary-text-color, #6e6e73);
           border-radius: 999px;
           padding: 5px 14px;
           font-size: 13px;
@@ -347,14 +349,14 @@ class NapperCard extends HTMLElement {
           transition: all 0.15s ease;
         }
         .baby-tab.active {
-          background: rgba(46, 168, 255, 0.18);
-          border-color: #2ea8ff;
-          color: #ffffff;
+          background: color-mix(in srgb, var(--primary-color, #03a9f4) 15%, transparent);
+          border-color: var(--primary-color, #03a9f4);
+          color: var(--primary-text-color, #1c1c1e);
         }
         .card-header-title {
           font-size: 16px;
           font-weight: 700;
-          color: #ffffff;
+          color: var(--primary-text-color, #1c1c1e);
           margin-bottom: 16px;
         }
         .timeline {
@@ -367,10 +369,10 @@ class NapperCard extends HTMLElement {
           align-items: flex-start;
           gap: 16px;
           position: relative;
-          padding-bottom: 24px;
+          padding-bottom: 22px;
         }
         .timeline-item:last-child {
-          padding-bottom: 6px;
+          padding-bottom: 4px;
         }
         /* Vertical line connecting the circles */
         .timeline-item:not(:last-child)::after {
@@ -381,18 +383,19 @@ class NapperCard extends HTMLElement {
           bottom: 0;
           width: 1.5px;
           transform: translateX(-50%);
-          background: rgba(255, 255, 255, 0.14);
+          background: var(--divider-color, rgba(127, 127, 127, 0.25));
           z-index: 1;
         }
         .timeline-item.state-past:not(:last-child)::after {
-          background: rgba(255, 255, 255, 0.22);
+          background: var(--primary-color, #03a9f4);
+          opacity: 0.35;
         }
         .icon-circle {
           width: 38px;
           height: 38px;
           border-radius: 50%;
-          background: #262629;
-          border: 1.5px solid #3d3d42;
+          background: var(--secondary-background-color, rgba(127, 127, 127, 0.08));
+          border: 1.5px solid var(--divider-color, rgba(127, 127, 127, 0.28));
           display: flex;
           align-items: center;
           justify-content: center;
@@ -404,9 +407,9 @@ class NapperCard extends HTMLElement {
           box-sizing: border-box;
         }
         .timeline-item.state-ongoing .icon-circle {
-          border-color: #2ea8ff;
-          background: rgba(46, 168, 255, 0.16);
-          box-shadow: 0 0 0 3px rgba(46, 168, 255, 0.18), 0 0 12px rgba(46, 168, 255, 0.45);
+          border-color: var(--primary-color, #03a9f4);
+          background: color-mix(in srgb, var(--primary-color, #03a9f4) 14%, transparent);
+          box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color, #03a9f4) 18%, transparent);
         }
         .item-content {
           display: flex;
@@ -424,27 +427,28 @@ class NapperCard extends HTMLElement {
         .item-title {
           font-size: 15.5px;
           font-weight: 700;
-          color: #f5f5f7;
+          color: var(--primary-text-color, #1c1c1e);
           line-height: 1.25;
         }
         .timeline-item.state-future .item-title {
           font-weight: 600;
           font-style: italic;
-          color: #c7c7cc;
+          color: var(--secondary-text-color, #6e6e73);
         }
         .item-subtitle {
           font-size: 14px;
           font-weight: 400;
-          color: #98989f;
+          color: var(--secondary-text-color, #6e6e73);
           line-height: 1.3;
           font-variant-numeric: tabular-nums;
         }
         .timeline-item.state-future .item-subtitle {
           font-style: italic;
-          color: #8e8e93;
+          color: var(--secondary-text-color, #8e8e93);
+          opacity: 0.85;
         }
         .timeline-item.state-ongoing .item-subtitle {
-          color: #7cc6ff;
+          color: var(--primary-color, #0288d1);
           font-weight: 500;
         }
         .ongoing-badge {
@@ -453,9 +457,9 @@ class NapperCard extends HTMLElement {
           gap: 5px;
           font-size: 11px;
           font-weight: 700;
-          color: #2ea8ff;
-          background: rgba(46, 168, 255, 0.15);
-          border: 1px solid rgba(46, 168, 255, 0.35);
+          color: var(--primary-color, #0288d1);
+          background: color-mix(in srgb, var(--primary-color, #03a9f4) 14%, transparent);
+          border: 1px solid color-mix(in srgb, var(--primary-color, #03a9f4) 35%, transparent);
           padding: 1px 8px;
           border-radius: 999px;
           letter-spacing: 0.2px;
@@ -464,8 +468,7 @@ class NapperCard extends HTMLElement {
           width: 6px;
           height: 6px;
           border-radius: 50%;
-          background: #2ea8ff;
-          box-shadow: 0 0 6px #2ea8ff;
+          background: var(--primary-color, #03a9f4);
         }
         /* Current point in time marker between past and future events */
         .now-marker {
@@ -473,8 +476,8 @@ class NapperCard extends HTMLElement {
           align-items: center;
           gap: 16px;
           position: relative;
-          padding-bottom: 24px;
-          margin-top: -4px;
+          padding-bottom: 22px;
+          margin-top: -2px;
         }
         .now-marker::after {
           content: "";
@@ -484,7 +487,7 @@ class NapperCard extends HTMLElement {
           bottom: 0;
           width: 1.5px;
           transform: translateX(-50%);
-          background: rgba(255, 255, 255, 0.14);
+          background: var(--divider-color, rgba(127, 127, 127, 0.25));
           z-index: 1;
         }
         .now-dot-wrap {
@@ -499,8 +502,8 @@ class NapperCard extends HTMLElement {
           width: 10px;
           height: 10px;
           border-radius: 50%;
-          background: #2ea8ff;
-          box-shadow: 0 0 0 4px rgba(46, 168, 255, 0.2), 0 0 10px rgba(46, 168, 255, 0.7);
+          background: var(--primary-color, #03a9f4);
+          box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary-color, #03a9f4) 22%, transparent);
         }
         .now-line-content {
           display: flex;
@@ -511,17 +514,17 @@ class NapperCard extends HTMLElement {
         .now-pill {
           font-size: 12px;
           font-weight: 600;
-          color: #5ac8fa;
-          background: rgba(46, 168, 255, 0.12);
-          border: 1px solid rgba(46, 168, 255, 0.28);
+          color: var(--primary-color, #0288d1);
+          background: color-mix(in srgb, var(--primary-color, #03a9f4) 12%, transparent);
+          border: 1px solid color-mix(in srgb, var(--primary-color, #03a9f4) 30%, transparent);
           padding: 2px 10px;
           border-radius: 999px;
           font-variant-numeric: tabular-nums;
         }
         .divider {
           height: 1px;
-          background: rgba(255, 255, 255, 0.1);
-          margin: 18px 0 14px;
+          background: var(--divider-color, rgba(127, 127, 127, 0.2));
+          margin: 16px 0 12px;
         }
         .actions-bar {
           display: grid;
@@ -539,19 +542,19 @@ class NapperCard extends HTMLElement {
           border-radius: 10px;
           border: none;
           background: transparent;
-          color: #2ea8ff;
+          color: var(--primary-color, #0288d1);
           cursor: pointer;
           transition: background 0.15s ease, opacity 0.15s ease;
           text-align: center;
         }
         .action-btn.highlighted:not(:disabled) {
-          background: rgba(46, 168, 255, 0.14);
+          background: color-mix(in srgb, var(--primary-color, #03a9f4) 12%, transparent);
         }
         .action-btn:hover:not(:disabled) {
-          background: rgba(46, 168, 255, 0.22);
+          background: color-mix(in srgb, var(--primary-color, #03a9f4) 20%, transparent);
         }
         .action-btn:disabled {
-          opacity: 0.32;
+          opacity: 0.35;
           cursor: not-allowed;
         }
         .action-icon {
@@ -562,7 +565,7 @@ class NapperCard extends HTMLElement {
           font-size: 12px;
           font-weight: 700;
           letter-spacing: 0.5px;
-          color: #2ea8ff;
+          color: var(--primary-color, #0288d1);
           text-transform: uppercase;
           line-height: 1.2;
         }

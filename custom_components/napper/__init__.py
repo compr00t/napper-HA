@@ -69,7 +69,7 @@ async def _async_register_lovelace_card(hass: HomeAssistant) -> None:
             )
         else:
             hass.http.register_static_path(CARD_URL, str(card_path), cache_headers=False)
-        add_extra_js_url(hass, f"{CARD_URL}?v=2.0.0")
+        add_extra_js_url(hass, f"{CARD_URL}?v=2.1.0")
 
         # Also auto-register in Lovelace storage resources if available
         lovelace = hass.data.get("lovelace")
@@ -88,7 +88,7 @@ async def _async_register_lovelace_card(hass: HomeAssistant) -> None:
                 ),
                 None,
             )
-            target_url = f"{CARD_URL}?v=2.0.0"
+            target_url = f"{CARD_URL}?v=2.1.0"
             if existing_item is None and hasattr(resources, "async_create_item"):
                 await resources.async_create_item(
                     {"res_type": "module", "url": target_url}
