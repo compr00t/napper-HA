@@ -210,7 +210,6 @@ class NapperCard extends HTMLElement {
           state: "ongoing",
           startMs: bedMs,
           endMs: bedMs,
-          showNowAfter: true,
         },
         {
           id: "wake_up",
@@ -493,39 +492,27 @@ class NapperCard extends HTMLElement {
           color: var(--primary-color, #0288d1);
           font-weight: 500;
         }
-        .ongoing-badge {
-          display: inline-flex;
-          align-items: center;
-          gap: 5px;
-          font-size: 11px;
-          font-weight: 700;
-          color: var(--primary-color, #0288d1);
-          background: color-mix(in srgb, var(--primary-color, #03a9f4) 14%, transparent);
-          border: 1px solid color-mix(in srgb, var(--primary-color, #03a9f4) 35%, transparent);
-          padding: 1px 8px;
-          border-radius: 999px;
-          letter-spacing: 0.2px;
-        }
         .pulse-dot {
-          width: 6px;
-          height: 6px;
+          width: 8px;
+          height: 8px;
           border-radius: 50%;
           background: var(--primary-color, #03a9f4);
+          box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color, #03a9f4) 22%, transparent);
+          flex-shrink: 0;
         }
-        /* Current point in time marker between past and future events */
+        /* Current point in time dot between past and future events */
         .now-marker {
           display: flex;
           align-items: center;
-          gap: 16px;
           position: relative;
-          padding-bottom: 22px;
-          margin-top: -2px;
+          padding-bottom: 14px;
+          margin-top: -8px;
         }
         .now-marker::after {
           content: "";
           position: absolute;
           left: 19px;
-          top: 14px;
+          top: 10px;
           bottom: 0;
           width: 1.5px;
           transform: translateX(-50%);
@@ -541,27 +528,11 @@ class NapperCard extends HTMLElement {
           z-index: 2;
         }
         .now-dot {
-          width: 10px;
-          height: 10px;
+          width: 9px;
+          height: 9px;
           border-radius: 50%;
           background: var(--primary-color, #03a9f4);
           box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary-color, #03a9f4) 22%, transparent);
-        }
-        .now-line-content {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          flex: 1;
-        }
-        .now-pill {
-          font-size: 12px;
-          font-weight: 600;
-          color: var(--primary-color, #0288d1);
-          background: color-mix(in srgb, var(--primary-color, #03a9f4) 12%, transparent);
-          border: 1px solid color-mix(in srgb, var(--primary-color, #03a9f4) 30%, transparent);
-          padding: 2px 10px;
-          border-radius: 999px;
-          font-variant-numeric: tabular-nums;
         }
         .divider {
           height: 1px;
@@ -644,9 +615,6 @@ class NapperCard extends HTMLElement {
                   <div class="now-dot-wrap">
                     <div class="now-dot"></div>
                   </div>
-                  <div class="now-line-content">
-                    <span class="now-pill">Jetzt • ${nowTimeStr}${awakeCompact}</span>
-                  </div>
                 </div>
               `;
 
@@ -658,11 +626,7 @@ class NapperCard extends HTMLElement {
                   <div class="item-content">
                     <div class="item-title-row">
                       <span class="item-title">${item.title}</span>
-                      ${
-                        item.state === "ongoing"
-                          ? `<span class="ongoing-badge"><span class="pulse-dot"></span>Jetzt</span>`
-                          : ""
-                      }
+                      ${item.state === "ongoing" ? `<span class="pulse-dot"></span>` : ""}
                     </div>
                     <div class="item-subtitle">${item.subtitle}</div>
                   </div>
