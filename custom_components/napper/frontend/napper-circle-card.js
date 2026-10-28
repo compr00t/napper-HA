@@ -179,16 +179,58 @@ class NapperCard extends HTMLElement {
     const nowMs = Date.now();
     const wakeUp = summary.wake_up || {};
     const bedtime = summary.bedtime || {};
+    const upcoming = summary.upcoming_event || {};
     const naps = Array.isArray(summary.naps) ? summary.naps : [];
     const isNightSleeping =
-      Boolean(summary.is_sleeping) && summary.sleep_state_de === "Nachtschlaf";
+      Boolean(bedtime.is_open) ||
+      (Boolean(summary.is_sleeping) && summary.sleep_state_de === "Nachtschlaf");
+
+    // Night-sleep view: Schlafenszeit on top, predicted Aufwachzeit on the bottom
+    if (isNightSleeping) {
+      const bedMs = bedtime.iso ? Date.parse(bedtime.iso) : null;
+      const predictedWakeTime =
+        (upcoming.type === "WAKE_UP" && upcoming.target_time) ||
+        wakeUp.time ||
+        "--:--";
+      const predictedWakeIso =
+        (upcoming.type === "WAKE_UP" && upcoming.target_iso) || wakeUp.iso;
+      const wakeMs = predictedWakeIso ? Date.parse(predictedWakeIso) : null;
+      const elapsedSuffix =
+        bedtime.duration_minutes > 0
+          ? `  •  ${this._formatDurationCompact(bedtime.duration_minutes)}`
+          : "";
+
+      return [
+        {
+          id: "bedtime",
+          type: "bedtime",
+          icon: "🌙",
+          title: "Schlafenszeit",
+          subtitle: `${bedtime.time || "--:--"}${elapsedSuffix}`,
+          state: "ongoing",
+          startMs: bedMs,
+          endMs: bedMs,
+          showNowAfter: true,
+        },
+        {
+          id: "wake_up",
+          type: "wake_up",
+          icon: "☀️",
+          title: "Aufwachzeit",
+          subtitle: predictedWakeTime,
+          state: "future",
+          startMs: wakeMs,
+          endMs: wakeMs,
+        },
+      ];
+    }
 
     const items = [];
 
     // 1. Aufwachzeit ("Morning Wake Up")
     const wakeMs = wakeUp.iso ? Date.parse(wakeUp.iso) : null;
     const wakeInPast = Boolean(
-      wakeUp.is_tracked || (wakeMs !== null && !isNaN(wakeMs) && wakeMs <= nowMs && !isNightSleeping)
+      wakeUp.is_tracked || (wakeMs !== null && !isNaN(wakeMs) && wakeMs <= nowMs)
     );
     items.push({
       id: "wake_up",

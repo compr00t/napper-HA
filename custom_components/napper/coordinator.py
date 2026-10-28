@@ -414,6 +414,27 @@ def compute_day_summary(
         }
     elif sleep_state_de == "Nachtschlaf" or (not wake_is_tracked and now < wake_dt):
         # Waiting for morning wake-up
+        if sleep_state_de == "Nachtschlaf":
+            active_bed_dt = (
+                (
+                    parse_napper_iso(open_bedtime_log.get("start"), local_tz)
+                    if open_bedtime_log
+                    else None
+                )
+                or latest_bedtime_dt
+                or bed_dt
+            )
+            bed_elapsed_min = max(0, round((now - active_bed_dt).total_seconds() / 60))
+            bedtime_info = {
+                "time": active_bed_dt.strftime("%H:%M"),
+                "iso": active_bed_dt.isoformat(),
+                "is_tracked": True,
+                "is_open": True,
+                "status": "aktiv",
+                "duration_minutes": bed_elapsed_min,
+                "duration_short": format_duration_short(bed_elapsed_min),
+                "timestamp": active_bed_dt.timestamp(),
+            }
         if now >= wake_dt:
             next_wake_dt = (now + datetime.timedelta(days=1)).replace(
                 hour=avg_wake_mins // 60,
@@ -423,6 +444,14 @@ def compute_day_summary(
             )
         else:
             next_wake_dt = wake_dt
+        if sleep_state_de == "Nachtschlaf":
+            wake_up_info = {
+                "time": next_wake_dt.strftime("%H:%M"),
+                "iso": next_wake_dt.isoformat(),
+                "is_tracked": False,
+                "status": "erwartet",
+                "timestamp": next_wake_dt.timestamp(),
+            }
         mins_left = max(0, round((next_wake_dt - now).total_seconds() / 60))
         target_hm = next_wake_dt.strftime("%H:%M")
         upcoming_event = {
