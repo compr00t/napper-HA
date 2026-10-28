@@ -13,6 +13,7 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfTime
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -28,12 +29,19 @@ async def async_setup_entry(
 ) -> None:
     """Set up Napper sensors for each child."""
     coordinator: NapperCoordinator = hass.data[DOMAIN][entry.entry_id]
+    ent_reg = er.async_get(hass)
     entities: list[SensorEntity] = []
     for baby_id in coordinator.babies:
+        # Remove obsolete countdown sensor if present in registry
+        old_countdown = ent_reg.async_get_entity_id(
+            "sensor", DOMAIN, f"{baby_id}_next_event_countdown"
+        )
+        if old_countdown:
+            ent_reg.async_remove(old_countdown)
+
         entities.extend(
             [
                 NapperUpcomingEventSensor(coordinator, baby_id),
-                NapperNextEventCountdownSensor(coordinator, baby_id),
                 NapperSleepStatusSensor(coordinator, baby_id),
                 NapperWakeUpSensor(coordinator, baby_id),
                 NapperBedtimeSensor(coordinator, baby_id),
@@ -103,35 +111,6 @@ class NapperUpcomingEventSensor(NapperBaseSensor):
             "uhrzeit": upcoming.get("target_time"),
             "zeitpunkt_iso": upcoming.get("target_iso"),
             "summary": summary,
-        }
-
-
-class NapperNextEventCountdownSensor(NapperBaseSensor):
-    """Numeric countdown in minutes to the next nap, bedtime, or wake-up."""
-
-    _attr_name = "Countdown nächstes Ereignis"
-    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
-    _attr_device_class = SensorDeviceClass.DURATION
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_icon = "mdi:timer-outline"
-
-    def __init__(self, coordinator: NapperCoordinator, baby_id: str) -> None:
-        super().__init__(coordinator, baby_id, "next_event_countdown")
-
-    @property
-    def native_value(self) -> int:
-        upcoming = self._summary().get("upcoming_event", {})
-        return int(upcoming.get("minutes_until", 0))
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        upcoming = self._summary().get("upcoming_event", {})
-        return {
-            "baby_id": self._baby_id,
-            "titel": upcoming.get("title_de"),
-            "countdown_text": upcoming.get("countdown_text"),
-            "uhrzeit": upcoming.get("target_time"),
-            "beschreibung": upcoming.get("state_text_de"),
         }
 
 

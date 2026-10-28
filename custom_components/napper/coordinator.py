@@ -545,6 +545,17 @@ class NapperCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         """Return the configured absolute time string ('HH:MM') for a baby."""
         return str(self.absolute_time_input.get(baby_id, ""))
 
+    def get_absolute_time_obj(self, baby_id: str) -> datetime.time | None:
+        """Return the configured absolute time as a datetime.time object (or None)."""
+        raw = self.get_absolute_time(baby_id)
+        if not raw:
+            return None
+        try:
+            dt = parse_absolute_time_str(raw)
+            return dt.time().replace(second=0, microsecond=0) if dt else None
+        except Exception:
+            return None
+
     def set_absolute_time(self, baby_id: str, value: str) -> None:
         """Validate and set the absolute time string ('HH:MM') for a baby."""
         cleaned = str(value or "").strip()

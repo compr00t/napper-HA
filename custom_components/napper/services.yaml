@@ -10,12 +10,12 @@ wake_up:
       selector:
         text:
     time:
-      name: Uhrzeit (HH:MM)
+      name: Uhrzeit
       description: "Optionale absolute Uhrzeit (z. B. 17:37), zu der das Kind aufgewacht ist."
       required: false
-      example: "17:37"
+      example: "17:37:00"
       selector:
-        text:
+        time:
     minutes_ago:
       name: Zeitdifferenz
       description: "0 = Jetzt sofort, > 0 = vor X Minuten aufgewacht (falls leer/0, wird die 'Uhrzeit'- oder 'Zeitdifferenz'-Entität des Kindes verwendet)."
@@ -25,10 +25,10 @@ wake_up:
       selector:
         number:
           min: 0
-          max: 720
+          max: 120
           step: 1
           unit_of_measurement: "Min."
-          mode: box
+          mode: slider
 
 start_nap:
   name: Nickerchen starten
@@ -42,12 +42,12 @@ start_nap:
       selector:
         text:
     time:
-      name: Uhrzeit (HH:MM)
+      name: Uhrzeit
       description: "Optionale absolute Uhrzeit (z. B. 17:37), zu der das Nickerchen gestartet ist."
       required: false
-      example: "17:37"
+      example: "17:37:00"
       selector:
-        text:
+        time:
     minutes_ago:
       name: Zeitdifferenz
       description: "0 = Jetzt sofort, > 0 = vor X Minuten gestartet (falls leer/0, wird die 'Uhrzeit'- oder 'Zeitdifferenz'-Entität des Kindes verwendet)."
@@ -57,10 +57,10 @@ start_nap:
       selector:
         number:
           min: 0
-          max: 720
+          max: 120
           step: 1
           unit_of_measurement: "Min."
-          mode: box
+          mode: slider
 
 start_sleep:
   name: Schlafen starten
@@ -74,12 +74,12 @@ start_sleep:
       selector:
         text:
     time:
-      name: Uhrzeit (HH:MM)
+      name: Uhrzeit
       description: "Optionale absolute Uhrzeit (z. B. 19:30), zu der das Kind eingeschlafen ist."
       required: false
-      example: "19:30"
+      example: "19:30:00"
       selector:
-        text:
+        time:
     minutes_ago:
       name: Zeitdifferenz
       description: "0 = Jetzt sofort, > 0 = vor X Minuten eingeschlafen (falls leer/0, wird die 'Uhrzeit'- oder 'Zeitdifferenz'-Entität des Kindes verwendet)."
@@ -89,7 +89,7 @@ start_sleep:
       selector:
         number:
           min: 0
-          max: 720
+          max: 120
           step: 1
           unit_of_measurement: "Min."
-          mode: box
+          mode: slider

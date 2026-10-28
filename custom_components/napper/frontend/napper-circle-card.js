@@ -179,11 +179,11 @@ class NapperCircleCard extends HTMLElement {
 
   async _callNapperService(serviceName, babyId) {
     if (!this._hass || !babyId || this._busyAction) return;
-    // Read latest values directly from inputs in case user clicked button immediately after typing
+    // Read latest values directly from inputs in case user clicked button immediately after changing
     const timeInput = this.shadowRoot?.querySelector(".custom-time");
-    const minsInput = this.shadowRoot?.querySelector(".custom-mins");
+    const minsSlider = this.shadowRoot?.querySelector(".offset-slider");
     const timeStr = (timeInput ? timeInput.value : this._absoluteTime || "").trim();
-    const minsAgo = minsInput ? Number(minsInput.value) || 0 : Number(this._minutesAgo) || 0;
+    const minsAgo = minsSlider ? Number(minsSlider.value) || 0 : Number(this._minutesAgo) || 0;
 
     this._busyAction = serviceName;
     this._render();
@@ -558,49 +558,32 @@ class NapperCircleCard extends HTMLElement {
         }
         .offset-row {
           display: flex;
-          flex-wrap: wrap;
-          align-items: center;
-          justify-content: space-between;
+          flex-direction: column;
           gap: 6px;
           margin-bottom: 10px;
+        }
+        .offset-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
         }
         .offset-label {
           font-size: 12px;
           color: #b8b3e8;
           font-weight: 600;
         }
-        .offset-chips {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 5px;
-          align-items: center;
-        }
-        .chip {
-          background: rgba(255, 255, 255, 0.07);
-          border: 1px solid rgba(143, 136, 255, 0.22);
-          color: #d6d3ff;
-          border-radius: 999px;
-          padding: 4px 9px;
-          font-size: 11.5px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.15s ease;
-        }
-        .chip.active {
-          background: #7c73ff;
-          color: #ffffff;
-          border-color: #a9a3ff;
-          box-shadow: 0 0 10px rgba(124, 115, 255, 0.45);
-        }
-        .custom-mins {
-          width: 48px;
-          background: rgba(0, 0, 0, 0.3);
-          border: 1px solid rgba(143, 136, 255, 0.35);
-          color: #fff;
-          border-radius: 8px;
-          padding: 4px 6px;
+        .offset-value {
           font-size: 12px;
-          text-align: center;
+          color: #ffffff;
+          font-weight: 700;
+          font-variant-numeric: tabular-nums;
+        }
+        .offset-slider {
+          width: 100%;
+          accent-color: #8b82ff;
+          cursor: pointer;
+          height: 6px;
+          border-radius: 999px;
         }
         .time-row {
           display: flex;
@@ -612,19 +595,32 @@ class NapperCircleCard extends HTMLElement {
           padding-top: 8px;
           border-top: 1px solid rgba(255, 255, 255, 0.06);
         }
+        .time-controls {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
         .custom-time {
-          width: 96px;
-          background: rgba(0, 0, 0, 0.3);
+          background: rgba(0, 0, 0, 0.35);
           border: 1px solid rgba(143, 136, 255, 0.35);
           color: #fff;
-          border-radius: 8px;
-          padding: 4px 8px;
-          font-size: 12.5px;
-          text-align: center;
+          color-scheme: dark;
+          border-radius: 10px;
+          padding: 4px 10px;
+          font-size: 13px;
+          font-family: inherit;
           font-variant-numeric: tabular-nums;
+          cursor: pointer;
         }
-        .custom-time::placeholder {
-          color: rgba(255, 255, 255, 0.38);
+        .clear-time-btn {
+          background: rgba(255, 255, 255, 0.08);
+          border: 1px solid rgba(143, 136, 255, 0.25);
+          color: #d6d3ff;
+          border-radius: 999px;
+          padding: 4px 9px;
+          font-size: 11.5px;
+          font-weight: 600;
+          cursor: pointer;
         }
         .action-buttons {
           display: grid;
@@ -825,40 +821,32 @@ class NapperCircleCard extends HTMLElement {
             : ""
         }
 
-        <!-- Action Controls (Zeitdifferenz & Absolute Uhrzeit) -->
+        <!-- Action Controls (Zeitdifferenz Slider & Uhrzeit Time Selector) -->
         ${
           this._config.show_actions
             ? `
           <div class="actions-panel">
             <div class="offset-row">
-              <span class="offset-label" id="lbl-offset">Zeitdifferenz: ${
-                this._minutesAgo === 0 ? "0 Min. (Jetzt)" : `${this._minutesAgo} Min.`
-              }</span>
-              <div class="offset-chips">
-                ${presetOffsets
-                  .map(
-                    (m) => `
-                  <button class="chip ${!this._absoluteTime && this._minutesAgo === m ? "active" : ""}" data-mins="${m}">
-                    ${m === 0 ? "0m" : `${m}m`}
-                  </button>
-                `
-                  )
-                  .join("")}
-                <input type="number" min="0" max="720" class="custom-mins"
-                       value="${this._minutesAgo}" title="Zeitdifferenz in Minuten" />
+              <div class="offset-header">
+                <span class="offset-label">Zeitdifferenz</span>
+                <span class="offset-value" id="lbl-offset">${
+                  this._minutesAgo === 0 ? "0 Min. (Jetzt)" : `${this._minutesAgo} Min.`
+                }</span>
               </div>
+              <input type="range" min="0" max="120" step="1" class="offset-slider"
+                     value="${this._minutesAgo}" title="Zeitdifferenz in Minuten (0–120 Min.)" />
             </div>
 
             <div class="time-row">
-              <span class="offset-label" id="lbl-time">Uhrzeit (absolut): ${
-                this._absoluteTime ? `${this._absoluteTime} Uhr` : "–"
+              <span class="offset-label" id="lbl-time">Uhrzeit${
+                this._absoluteTime ? `: ${this._absoluteTime} Uhr` : ""
               }</span>
-              <div class="offset-chips">
-                <input type="text" class="custom-time" placeholder="z. B. 17:37" maxlength="5"
-                       value="${this._absoluteTime}" title="Absolute Uhrzeit im Format HH:MM (z. B. 17:37)" />
+              <div class="time-controls">
+                <input type="time" class="custom-time"
+                       value="${this._absoluteTime}" title="Absolute Uhrzeit auswählen (z. B. 17:37)" />
                 ${
                   this._absoluteTime
-                    ? `<button class="chip clear-time-btn" title="Uhrzeit löschen">✕</button>`
+                    ? `<button class="clear-time-btn" title="Uhrzeit zurücksetzen">✕</button>`
                     : ""
                 }
               </div>
@@ -920,14 +908,13 @@ class NapperCircleCard extends HTMLElement {
       });
       const lblOffset = this.shadowRoot.querySelector("#lbl-offset");
       if (lblOffset) {
-        lblOffset.textContent = `Zeitdifferenz: ${
-          this._minutesAgo === 0 ? "0 Min. (Jetzt)" : `${this._minutesAgo} Min.`
-        }`;
+        lblOffset.textContent =
+          this._minutesAgo === 0 ? "0 Min. (Jetzt)" : `${this._minutesAgo} Min.`;
       }
       const lblTime = this.shadowRoot.querySelector("#lbl-time");
       if (lblTime) {
-        lblTime.textContent = `Uhrzeit (absolut): ${
-          this._absoluteTime ? `${this._absoluteTime} Uhr` : "–"
+        lblTime.textContent = `Uhrzeit${
+          this._absoluteTime ? `: ${this._absoluteTime} Uhr` : ""
         }`;
       }
     };
@@ -942,14 +929,6 @@ class NapperCircleCard extends HTMLElement {
       });
     }
 
-    this.shadowRoot.querySelectorAll(".chip[data-mins]").forEach((chip) => {
-      chip.addEventListener("click", () => {
-        this._minutesAgo = Number(chip.getAttribute("data-mins")) || 0;
-        this._absoluteTime = "";
-        this._render();
-      });
-    });
-
     const clearTimeBtn = this.shadowRoot.querySelector(".clear-time-btn");
     if (clearTimeBtn) {
       clearTimeBtn.addEventListener("click", () => {
@@ -958,10 +937,10 @@ class NapperCircleCard extends HTMLElement {
       });
     }
 
-    const customInput = this.shadowRoot.querySelector(".custom-mins");
-    if (customInput) {
-      customInput.addEventListener("input", (e) => {
-        this._minutesAgo = Math.max(0, Math.min(720, Number(e.target.value) || 0));
+    const offsetSlider = this.shadowRoot.querySelector(".offset-slider");
+    if (offsetSlider) {
+      offsetSlider.addEventListener("input", (e) => {
+        this._minutesAgo = Math.max(0, Math.min(120, Number(e.target.value) || 0));
         if (this._minutesAgo > 0) {
           this._absoluteTime = "";
           const timeEl = this.shadowRoot.querySelector(".custom-time");
@@ -969,7 +948,6 @@ class NapperCircleCard extends HTMLElement {
         }
         updateButtonSuffixes();
       });
-      customInput.addEventListener("change", () => this._render());
     }
 
     const customTimeInput = this.shadowRoot.querySelector(".custom-time");
@@ -978,8 +956,8 @@ class NapperCircleCard extends HTMLElement {
         this._absoluteTime = (e.target.value || "").trim();
         if (this._absoluteTime) {
           this._minutesAgo = 0;
-          const minsEl = this.shadowRoot.querySelector(".custom-mins");
-          if (minsEl) minsEl.value = "0";
+          const sliderEl = this.shadowRoot.querySelector(".offset-slider");
+          if (sliderEl) sliderEl.value = "0";
         }
         updateButtonSuffixes();
       });

@@ -17,7 +17,7 @@ Diese benutzerdefinierte Home Assistant Integration verbindet dein **Napper**-Ko
   - **Aufwachen** (beendet das aktuell laufende Nickerchen oder den Nachtschlaf – **nur aktiv, wenn das Kind gerade schläft**)
   - **Nickerchen starten** (startet ein Nickerchen – **nur aktiv, wenn das Kind aktuell nicht schläft**)
   - **Schlafen starten** (startet den Nachtschlaf – **nur aktiv, wenn das Kind aktuell nicht schläft**)
-  - Alle drei Buttons arbeiten sowohl mit der `number`-Entität **`Zeitdifferenz`** (`0–360 min`) als auch mit der `text`-Entität **`Uhrzeit`** (z. B. `17:37`), über die Eingabefelder in der Karte oder per Service-Aufruf (`minutes_ago` bzw. `time`).
+  - Alle drei Buttons arbeiten sowohl mit dem **`Zeitdifferenz`**-Schieberegler (`number`, `0–120 min`) als auch mit der **`Uhrzeit`**-Auswahl (`time`, z. B. `17:37`), über die Regler/Zeitauswahl in der Karte oder per Service-Aufruf (`minutes_ago` bzw. `time`).
 - **Komplett auf Deutsch**: Alle Entitätsnamen, Zustände, Attribute, Buttons, Services und die Lovelace-Karte sind auf Deutsch.
 
 ---
@@ -50,7 +50,6 @@ Für jedes Kind in deinem Napper-Konto wird automatisch ein eigenes Gerät angel
 | Plattform | Entität (Beispiel) | Beschreibung | Beispiel-Zustand |
 | :--- | :--- | :--- | :--- |
 | `sensor` | `sensor.max_nachstes_ereignis` | **Nächstes Ereignis** als Home Assistant Zeitstempel (`timestamp`), wird im Dashboard automatisch als *„in 2 Stunden“* bzw. *„3. November 2026 um 07:00“* dargestellt (enthält außerdem alle Kreis-Daten für die Karte) | `in 45 Minuten` (`2026-11-03T07:00:00+01:00`) |
-| `sensor` | `sensor.max_countdown_nachstes_ereignis` | **Countdown nächstes Ereignis** in Minuten | `45 min` |
 | `sensor` | `sensor.max_schlafstatus` | Aktueller **Schlafstatus** | `Wach`, `Nickerchen`, `Nachtschlaf` |
 | `sensor` | `sensor.max_aufwachzeit` | **Aufwachzeit** am Morgen | `07:00` |
 | `sensor` | `sensor.max_1_nickerchen` .. `4_nickerchen` | **1. bis 4. Nickerchen** (Start–Ende & Dauer) | `17:00 – 17:30 (30 Min.)` |
@@ -58,8 +57,8 @@ Für jedes Kind in deinem Napper-Konto wird automatisch ein eigenes Gerät angel
 | `sensor` | `sensor.max_wachzeit` | Aktuelle **Wachzeit** seit dem letzten Aufwachen | `2 Std. 00 Min.` |
 | `sensor` | `sensor.max_tagesschlaf` | **Tagesschlaf** in Minuten | `135 min` |
 | `binary_sensor` | `binary_sensor.max_schlaft_gerade` | **Schläft gerade** (`on` / `off`) | `off` |
-| `number` | `number.max_zeitdifferenz` | **Zeitdifferenz** in Minuten für den nächsten Button-Klick (`0–360 min`, setzt sich nach Klick automatisch auf `0` zurück) | `0 min` |
-| `text` | `text.max_uhrzeit` | **Uhrzeit** (absolut im Format `HH:MM`, z. B. `17:37`) für den nächsten Button-Klick (leert sich nach Klick automatisch) | `17:37` |
+| `number` | `number.max_zeitdifferenz` | **Zeitdifferenz** (Schieberegler `0–120 min`) für den nächsten Button-Klick (setzt sich nach Klick automatisch auf `0` zurück) | `0 min` |
+| `time` | `time.max_uhrzeit` | **Uhrzeit** (Uhrzeit-Auswahl, z. B. `17:37`) für den nächsten Button-Klick (leert sich nach Klick automatisch) | `17:37:00` |
 | `button` | `button.max_aufwachen` | **Aufwachen** – beendet ein laufendes Nickerchen oder den Nachtschlaf (nutzt `Uhrzeit` oder `Zeitdifferenz`; nur aktiv, wenn das Kind gerade schläft) | – |
 | `button` | `button.max_nickerchen_starten` | **Nickerchen starten** (nutzt `Uhrzeit` oder `Zeitdifferenz`; nur aktiv, wenn das Kind nicht schläft) | – |
 | `button` | `button.max_schlafen_starten` | **Schlafen starten** – startet den Nachtschlaf (nutzt `Uhrzeit` oder `Zeitdifferenz`; nur aktiv, wenn das Kind nicht schläft) | – |
@@ -93,7 +92,7 @@ baby: "Max"
 
 ## Home Assistant Aktionen (Services)
 
-Alle drei Services akzeptieren unter `baby_id` entweder die **Baby-ID** oder einfach den **Namen des Kindes** (z. B. `"Max"`) sowie optional `time` (absolute Uhrzeit wie `"17:37"`) oder `minutes_ago` (Zeitdifferenz in Minuten; falls beides leer/0 ist, werden die Entitäten `text.<kind>_uhrzeit` bzw. `number.<kind>_zeitdifferenz` verwendet):
+Alle drei Services akzeptieren unter `baby_id` entweder die **Baby-ID** oder einfach den **Namen des Kindes** (z. B. `"Max"`) sowie optional `time` (absolute Uhrzeit wie `"17:37"`) oder `minutes_ago` (Zeitdifferenz in Minuten; falls beides leer/0 ist, werden die Entitäten `time.<kind>_uhrzeit` bzw. `number.<kind>_zeitdifferenz` verwendet):
 
 ### 1. Aufwachen (beendet Nickerchen oder Nachtschlaf – nur wenn das Kind schläft)
 ```yaml

@@ -35,10 +35,10 @@ class NapperMinutesAgoNumber(CoordinatorEntity[NapperCoordinator], NumberEntity)
     _attr_name = "Zeitdifferenz"
     _attr_icon = "mdi:history"
     _attr_native_min_value = 0
-    _attr_native_max_value = 360
+    _attr_native_max_value = 120
     _attr_native_step = 1
     _attr_native_unit_of_measurement = UnitOfTime.MINUTES
-    _attr_mode = NumberMode.BOX
+    _attr_mode = NumberMode.SLIDER
 
     def __init__(self, coordinator: NapperCoordinator, baby_id: str) -> None:
         """Initialize the number entity."""
