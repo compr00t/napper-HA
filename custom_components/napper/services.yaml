@@ -93,3 +93,131 @@ start_sleep:
           step: 1
           unit_of_measurement: "Min."
           mode: slider
+
+pause_nap:
+  name: Nickerchen pausieren
+  description: Pausiert das aktuell laufende Nickerchen eines Kindes (nur möglich, wenn gerade ein Nickerchen aktiv und nicht bereits pausiert ist).
+  fields:
+    baby_id:
+      name: Kind (Baby-ID oder Name)
+      description: Die Napper Baby-ID oder der Name des Kindes (z. B. "Max"). Wenn leer, wird das erste Kind verwendet.
+      required: false
+      example: "Max"
+      selector:
+        text:
+    time:
+      name: Uhrzeit
+      description: "Optionale absolute Uhrzeit (z. B. 14:15), zu der die Pause begonnen hat."
+      required: false
+      example: "14:15:00"
+      selector:
+        time:
+    minutes_ago:
+      name: Zeitdifferenz
+      description: "0 = Jetzt sofort, > 0 = vor X Minuten pausiert (falls leer/0, wird die 'Uhrzeit'- oder 'Zeitdifferenz'-Entität des Kindes verwendet)."
+      required: false
+      default: 0
+      example: 5
+      selector:
+        number:
+          min: 0
+          max: 120
+          step: 1
+          unit_of_measurement: "Min."
+          mode: slider
+
+resume_nap:
+  name: Nickerchen fortsetzen
+  description: Setzt ein pausiertes Nickerchen fort (nur möglich, wenn ein Nickerchen aktuell pausiert ist).
+  fields:
+    baby_id:
+      name: Kind (Baby-ID oder Name)
+      description: Die Napper Baby-ID oder der Name des Kindes (z. B. "Max"). Wenn leer, wird das erste Kind verwendet.
+      required: false
+      example: "Max"
+      selector:
+        text:
+    time:
+      name: Uhrzeit
+      description: "Optionale absolute Uhrzeit (z. B. 14:25), zu der das Nickerchen fortgesetzt wurde."
+      required: false
+      example: "14:25:00"
+      selector:
+        time:
+    minutes_ago:
+      name: Zeitdifferenz
+      description: "0 = Jetzt sofort, > 0 = vor X Minuten fortgesetzt (falls leer/0, wird die 'Uhrzeit'- oder 'Zeitdifferenz'-Entität des Kindes verwendet)."
+      required: false
+      default: 0
+      example: 5
+      selector:
+        number:
+          min: 0
+          max: 120
+          step: 1
+          unit_of_measurement: "Min."
+          mode: slider
+
+pause_sleep:
+  name: Schlafen pausieren
+  description: Startet ein nächtliches Aufwachen während des aktiven Nachtschlafs (nur möglich, wenn Nachtschlaf aktiv und nicht bereits pausiert ist).
+  fields:
+    baby_id:
+      name: Kind (Baby-ID oder Name)
+      description: Die Napper Baby-ID oder der Name des Kindes (z. B. "Max"). Wenn leer, wird das erste Kind verwendet.
+      required: false
+      example: "Max"
+      selector:
+        text:
+    time:
+      name: Uhrzeit
+      description: "Optionale absolute Uhrzeit (z. B. 02:15), zu der das nächtliche Aufwachen begonnen hat."
+      required: false
+      example: "02:15:00"
+      selector:
+        time:
+    minutes_ago:
+      name: Zeitdifferenz
+      description: "0 = Jetzt sofort, > 0 = vor X Minuten aufgewacht (falls leer/0, wird die 'Uhrzeit'- oder 'Zeitdifferenz'-Entität des Kindes verwendet)."
+      required: false
+      default: 0
+      example: 5
+      selector:
+        number:
+          min: 0
+          max: 120
+          step: 1
+          unit_of_measurement: "Min."
+          mode: slider
+
+resume_sleep:
+  name: Schlafen fortsetzen
+  description: Beendet das nächtliche Aufwachen und setzt den Nachtschlaf fort (nur möglich, wenn der Nachtschlaf aktuell pausiert ist).
+  fields:
+    baby_id:
+      name: Kind (Baby-ID oder Name)
+      description: Die Napper Baby-ID oder der Name des Kindes (z. B. "Max"). Wenn leer, wird das erste Kind verwendet.
+      required: false
+      example: "Max"
+      selector:
+        text:
+    time:
+      name: Uhrzeit
+      description: "Optionale absolute Uhrzeit (z. B. 02:35), zu der das Kind wieder eingeschlafen ist."
+      required: false
+      example: "02:35:00"
+      selector:
+        time:
+    minutes_ago:
+      name: Zeitdifferenz
+      description: "0 = Jetzt sofort, > 0 = vor X Minuten wieder eingeschlafen (falls leer/0, wird die 'Uhrzeit'- oder 'Zeitdifferenz'-Entität des Kindes verwendet)."
+      required: false
+      default: 0
+      example: 5
+      selector:
+        number:
+          min: 0
+          max: 120
+          step: 1
+          unit_of_measurement: "Min."
+          mode: slider

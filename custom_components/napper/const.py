@@ -16,7 +16,11 @@ MAX_NAP_SENSORS = 4
 
 SERVICE_WAKE_UP = "wake_up"
 SERVICE_START_NAP = "start_nap"
+SERVICE_PAUSE_NAP = "pause_nap"
+SERVICE_RESUME_NAP = "resume_nap"
 SERVICE_START_SLEEP = "start_sleep"
+SERVICE_PAUSE_SLEEP = "pause_sleep"
+SERVICE_RESUME_SLEEP = "resume_sleep"
 SERVICE_STOP_SLEEP = "stop_sleep"
 SERVICE_LOG_BEDTIME = "log_bedtime"
 SERVICE_LOG_WAKE_UP = "log_wake_up"

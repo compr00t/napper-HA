@@ -84,12 +84,12 @@ def resolve_target_datetime(
 
 
 def get_start_minutes_after_midnight(category: str, dt: datetime.datetime) -> int:
-    """Match Napper's getStartMinutesAfterMidnight(category, start)."""
-    local_dt = dt.astimezone() if dt.tzinfo else dt
-    minutes = local_dt.hour * 60 + local_dt.minute
-    if category == "BED_TIME" and local_dt.hour < 12:
-        minutes += 1440
-    return minutes
+    """Match Napper's getStartMinutesAfterMidnight(start, category).
+
+    When `start` is passed as the unadjusted ISO timestamp, `startMinutesAfterMidnight`
+    must be 0 so Napper's `mapLog` does not add an extra offset on top of `start`.
+    """
+    return 0
 
 
 def create_log_id(category: str, start_iso: str) -> str:
@@ -98,6 +98,17 @@ def create_log_id(category: str, start_iso: str) -> str:
         day_str = start_iso.split("T")[0]
         return f"LOG_{day_str}_{category}"
     return f"LOG_{uuid.uuid4()}_{category}"
+
+
+def is_nap_log_paused(log: dict[str, Any] | None) -> bool:
+    """Return True if an open NAP log currently has an active (open) pause."""
+    if not log or not log.get("isOpen"):
+        return False
+    pauses = log.get("pauses")
+    if not isinstance(pauses, list) or not pauses:
+        return False
+    last_pause = pauses[-1]
+    return isinstance(last_pause, dict) and not last_pause.get("end")
 
 
 def build_empty_log(
@@ -374,10 +385,42 @@ class NapperApiClient:
     async def async_start_bedtime(
         self,
         baby_id: str,
+        current_logs: list[dict[str, Any]] | None = None,
         start_dt: datetime.datetime | None = None,
         minutes_ago: int | float = 0,
     ) -> dict[str, Any]:
+        """Start night sleep directly (or finish open pre-bedtime tracking so night sleep starts)."""
         dt = resolve_target_datetime(start_dt, minutes_ago)
+        if current_logs is None:
+            today = await self.async_get_today(baby_id)
+            current_logs = today.get("logs", today.get("allLogs", []))
+
+        # If pre-bedtime routine tracking (an open BED_TIME log) is currently running,
+        # close it (isOpen=False) so actual night sleep starts immediately.
+        open_bedtimes = [
+            entry
+            for entry in current_logs
+            if entry.get("isOpen")
+            and not entry.get("skipped")
+            and entry.get("category") == "BED_TIME"
+        ]
+        if open_bedtimes:
+            current_bed = open_bedtimes[0]
+            try:
+                start_parsed = datetime.datetime.fromisoformat(
+                    current_bed["start"].replace("Z", "+00:00")
+                )
+                if dt < start_parsed:
+                    dt = start_parsed
+            except Exception:
+                pass
+            end_iso = get_time_with_timezone(dt)
+            updated = dict(current_bed)
+            updated["end"] = end_iso
+            updated["isOpen"] = False
+            await self.async_put_log(baby_id, updated)
+            return updated
+
         iso = get_time_with_timezone(dt)
         log = build_empty_log(
             log_id=create_log_id("BED_TIME", iso),
@@ -386,10 +429,182 @@ class NapperApiClient:
             end_iso=iso,
             start_minutes_after_midnight=get_start_minutes_after_midnight("BED_TIME", dt),
             user_id=self.user_id,
+            is_open=False,
+        )
+        await self.async_put_log(baby_id, log)
+        return log
+
+    async def async_pause_nap(
+        self,
+        baby_id: str,
+        current_logs: list[dict[str, Any]] | None = None,
+        pause_dt: datetime.datetime | None = None,
+        minutes_ago: int | float = 0,
+    ) -> dict[str, Any]:
+        """Pause the currently active open NAP log."""
+        dt = resolve_target_datetime(pause_dt, minutes_ago)
+        if current_logs is None:
+            today = await self.async_get_today(baby_id)
+            current_logs = today.get("logs", today.get("allLogs", []))
+
+        open_naps = [
+            entry
+            for entry in current_logs
+            if entry.get("isOpen") and not entry.get("skipped") and entry.get("category") == "NAP"
+        ]
+        if not open_naps:
+            raise NapperApiError("Kein aktives Nickerchen zum Pausieren gefunden.")
+
+        current_nap = open_naps[0]
+        if is_nap_log_paused(current_nap):
+            raise NapperApiError("Das aktuelle Nickerchen ist bereits pausiert.")
+
+        try:
+            start_parsed = datetime.datetime.fromisoformat(
+                current_nap["start"].replace("Z", "+00:00")
+            )
+            if dt <= start_parsed:
+                dt = start_parsed + datetime.timedelta(seconds=1)
+        except Exception:
+            pass
+
+        pause_start_ms = int(dt.timestamp() * 1000)
+        pauses = [dict(p) for p in (current_nap.get("pauses") or []) if isinstance(p, dict)]
+        if pauses and pauses[-1].get("end"):
+            last_end_ms = int(pauses[-1]["end"])
+            if pause_start_ms <= last_end_ms:
+                pause_start_ms = last_end_ms + 1000
+
+        pauses.append({"start": pause_start_ms})
+        updated = dict(current_nap)
+        updated["pauses"] = pauses
+        await self.async_put_log(baby_id, updated)
+        return updated
+
+    async def async_resume_nap(
+        self,
+        baby_id: str,
+        current_logs: list[dict[str, Any]] | None = None,
+        resume_dt: datetime.datetime | None = None,
+        minutes_ago: int | float = 0,
+    ) -> dict[str, Any]:
+        """Resume a paused open NAP log by setting 'end' on the last open pause."""
+        dt = resolve_target_datetime(resume_dt, minutes_ago)
+        if current_logs is None:
+            today = await self.async_get_today(baby_id)
+            current_logs = today.get("logs", today.get("allLogs", []))
+
+        open_naps = [
+            entry
+            for entry in current_logs
+            if entry.get("isOpen") and not entry.get("skipped") and entry.get("category") == "NAP"
+        ]
+        if not open_naps or not is_nap_log_paused(open_naps[0]):
+            raise NapperApiError("Kein pausiertes Nickerchen zum Fortsetzen gefunden.")
+
+        current_nap = open_naps[0]
+        pauses = [dict(p) for p in (current_nap.get("pauses") or []) if isinstance(p, dict)]
+        last_pause = pauses[-1]
+        start_ms = int(last_pause.get("start") or int(dt.timestamp() * 1000))
+        end_ms = int(dt.timestamp() * 1000)
+        if end_ms <= start_ms:
+            end_ms = start_ms + 1000
+        last_pause["end"] = end_ms
+
+        updated = dict(current_nap)
+        updated["pauses"] = pauses
+        await self.async_put_log(baby_id, updated)
+        return updated
+
+    async def async_pause_sleep(
+        self,
+        baby_id: str,
+        current_logs: list[dict[str, Any]] | None = None,
+        start_dt: datetime.datetime | None = None,
+        minutes_ago: int | float = 0,
+    ) -> dict[str, Any]:
+        """Pause night sleep by starting an open NIGHT_WAKING log (nightly wake-up)."""
+        dt = resolve_target_datetime(start_dt, minutes_ago)
+        if current_logs is None:
+            today = await self.async_get_today(baby_id)
+            current_logs = today.get("logs", today.get("allLogs", []))
+
+        open_wakings = [
+            entry
+            for entry in current_logs
+            if entry.get("isOpen")
+            and not entry.get("skipped")
+            and entry.get("category") == "NIGHT_WAKING"
+        ]
+        if open_wakings:
+            raise NapperApiError("Der Nachtschlaf ist bereits pausiert.")
+
+        for entry in current_logs:
+            if not entry.get("skipped") and entry.get("category") == "BED_TIME":
+                raw_ts = entry.get("end") or entry.get("start")
+                if raw_ts:
+                    try:
+                        bed_parsed = datetime.datetime.fromisoformat(
+                            str(raw_ts).replace("Z", "+00:00")
+                        )
+                        if dt <= bed_parsed:
+                            dt = bed_parsed + datetime.timedelta(seconds=1)
+                    except Exception:
+                        pass
+                break
+
+        iso = get_time_with_timezone(dt)
+        log = build_empty_log(
+            log_id=create_log_id("NIGHT_WAKING", iso),
+            category="NIGHT_WAKING",
+            start_iso=iso,
+            end_iso=iso,
+            start_minutes_after_midnight=get_start_minutes_after_midnight("NIGHT_WAKING", dt),
+            user_id=self.user_id,
             is_open=True,
         )
         await self.async_put_log(baby_id, log)
         return log
+
+    async def async_resume_sleep(
+        self,
+        baby_id: str,
+        current_logs: list[dict[str, Any]] | None = None,
+        end_dt: datetime.datetime | None = None,
+        minutes_ago: int | float = 0,
+    ) -> dict[str, Any]:
+        """Resume night sleep by ending the currently open NIGHT_WAKING log."""
+        dt = resolve_target_datetime(end_dt, minutes_ago)
+        if current_logs is None:
+            today = await self.async_get_today(baby_id)
+            current_logs = today.get("logs", today.get("allLogs", []))
+
+        open_wakings = [
+            entry
+            for entry in current_logs
+            if entry.get("isOpen")
+            and not entry.get("skipped")
+            and entry.get("category") == "NIGHT_WAKING"
+        ]
+        if not open_wakings:
+            raise NapperApiError("Kein pausierter Nachtschlaf zum Fortsetzen gefunden.")
+
+        current_waking = open_wakings[0]
+        try:
+            start_parsed = datetime.datetime.fromisoformat(
+                current_waking["start"].replace("Z", "+00:00")
+            )
+            if dt <= start_parsed:
+                dt = start_parsed + datetime.timedelta(seconds=1)
+        except Exception:
+            pass
+
+        end_iso = get_time_with_timezone(dt)
+        updated = dict(current_waking)
+        updated["end"] = end_iso
+        updated["isOpen"] = False
+        await self.async_put_log(baby_id, updated)
+        return updated
 
     async def async_wake_up(
         self,
@@ -422,12 +637,32 @@ class NapperApiClient:
                 pass
             end_iso = get_time_with_timezone(dt)
             updated = dict(current_nap)
+            # Remove any open pause when stopping a nap (matching Napper's removeLastOpenPause)
+            pauses = [
+                dict(p)
+                for p in (current_nap.get("pauses") or [])
+                if isinstance(p, dict) and p.get("end")
+            ]
+            updated["pauses"] = pauses
             updated["end"] = end_iso
             updated["isOpen"] = False
             await self.async_put_log(baby_id, updated)
             return updated
 
         # 2. Otherwise, end night sleep (close any open BED_TIME/NIGHT_WAKING) and create WOKE_UP log
+        for entry in current_logs:
+            if not entry.get("skipped") and entry.get("category") in ("BED_TIME", "NIGHT_WAKING"):
+                raw_ts = entry.get("end") or entry.get("start")
+                if raw_ts:
+                    try:
+                        parsed_ts = datetime.datetime.fromisoformat(
+                            str(raw_ts).replace("Z", "+00:00")
+                        )
+                        if dt <= parsed_ts:
+                            dt = parsed_ts + datetime.timedelta(seconds=1)
+                    except Exception:
+                        pass
+
         iso = get_time_with_timezone(dt)
         for entry in current_logs:
             if (

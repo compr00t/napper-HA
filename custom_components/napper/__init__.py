@@ -24,6 +24,10 @@ from .const import (
     DOMAIN,
     SERVICE_LOG_BEDTIME,
     SERVICE_LOG_WAKE_UP,
+    SERVICE_PAUSE_NAP,
+    SERVICE_PAUSE_SLEEP,
+    SERVICE_RESUME_NAP,
+    SERVICE_RESUME_SLEEP,
     SERVICE_START_NAP,
     SERVICE_START_SLEEP,
     SERVICE_STOP_SLEEP,
@@ -69,7 +73,7 @@ async def _async_register_lovelace_card(hass: HomeAssistant) -> None:
             )
         else:
             hass.http.register_static_path(CARD_URL, str(card_path), cache_headers=False)
-        add_extra_js_url(hass, f"{CARD_URL}?v=2.4.0")
+        add_extra_js_url(hass, f"{CARD_URL}?v=2.5.0")
 
         # Also auto-register in Lovelace storage resources if available
         lovelace = hass.data.get("lovelace")
@@ -88,7 +92,7 @@ async def _async_register_lovelace_card(hass: HomeAssistant) -> None:
                 ),
                 None,
             )
-            target_url = f"{CARD_URL}?v=2.4.0"
+            target_url = f"{CARD_URL}?v=2.5.0"
             if existing_item is None and hasattr(resources, "async_create_item"):
                 await resources.async_create_item(
                     {"res_type": "module", "url": target_url}
@@ -186,6 +190,50 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             baby_id, minutes_ago=minutes_ago, target_dt=target_dt
         )
 
+    async def _handle_pause_nap(call: ServiceCall) -> None:
+        coord, baby_id = _resolve_coordinator_and_baby(call)
+        target_dt, minutes_ago = coord.pop_action_timing(
+            baby_id,
+            explicit_time=call.data.get("time"),
+            explicit_minutes_ago=int(call.data.get("minutes_ago", 0)),
+        )
+        await coord.async_pause_nap(
+            baby_id, minutes_ago=minutes_ago, target_dt=target_dt
+        )
+
+    async def _handle_resume_nap(call: ServiceCall) -> None:
+        coord, baby_id = _resolve_coordinator_and_baby(call)
+        target_dt, minutes_ago = coord.pop_action_timing(
+            baby_id,
+            explicit_time=call.data.get("time"),
+            explicit_minutes_ago=int(call.data.get("minutes_ago", 0)),
+        )
+        await coord.async_resume_nap(
+            baby_id, minutes_ago=minutes_ago, target_dt=target_dt
+        )
+
+    async def _handle_pause_sleep(call: ServiceCall) -> None:
+        coord, baby_id = _resolve_coordinator_and_baby(call)
+        target_dt, minutes_ago = coord.pop_action_timing(
+            baby_id,
+            explicit_time=call.data.get("time"),
+            explicit_minutes_ago=int(call.data.get("minutes_ago", 0)),
+        )
+        await coord.async_pause_sleep(
+            baby_id, minutes_ago=minutes_ago, target_dt=target_dt
+        )
+
+    async def _handle_resume_sleep(call: ServiceCall) -> None:
+        coord, baby_id = _resolve_coordinator_and_baby(call)
+        target_dt, minutes_ago = coord.pop_action_timing(
+            baby_id,
+            explicit_time=call.data.get("time"),
+            explicit_minutes_ago=int(call.data.get("minutes_ago", 0)),
+        )
+        await coord.async_resume_sleep(
+            baby_id, minutes_ago=minutes_ago, target_dt=target_dt
+        )
+
     if not hass.services.has_service(DOMAIN, SERVICE_START_NAP):
         hass.services.async_register(
             DOMAIN, SERVICE_WAKE_UP, _handle_wake_up, schema=SERVICE_SCHEMA
@@ -194,7 +242,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             DOMAIN, SERVICE_START_NAP, _handle_start_nap, schema=SERVICE_SCHEMA
         )
         hass.services.async_register(
+            DOMAIN, SERVICE_PAUSE_NAP, _handle_pause_nap, schema=SERVICE_SCHEMA
+        )
+        hass.services.async_register(
+            DOMAIN, SERVICE_RESUME_NAP, _handle_resume_nap, schema=SERVICE_SCHEMA
+        )
+        hass.services.async_register(
             DOMAIN, SERVICE_START_SLEEP, _handle_start_sleep, schema=SERVICE_SCHEMA
+        )
+        hass.services.async_register(
+            DOMAIN, SERVICE_PAUSE_SLEEP, _handle_pause_sleep, schema=SERVICE_SCHEMA
+        )
+        hass.services.async_register(
+            DOMAIN, SERVICE_RESUME_SLEEP, _handle_resume_sleep, schema=SERVICE_SCHEMA
         )
         # Keep legacy service names mapped to the unified handlers
         hass.services.async_register(

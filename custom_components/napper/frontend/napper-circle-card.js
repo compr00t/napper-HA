@@ -199,6 +199,10 @@ class NapperCard extends HTMLElement {
         bedtime.duration_minutes > 0
           ? `  •  ${this._formatDurationCompact(bedtime.duration_minutes)}`
           : "";
+      const pausedSuffix =
+        bedtime.is_paused || summary.is_night_sleep_paused
+          ? "  •  pausiert"
+          : "";
 
       return [
         {
@@ -206,7 +210,7 @@ class NapperCard extends HTMLElement {
           type: "bedtime",
           icon: "🌙",
           title: "Schlafenszeit",
-          subtitle: `${bedtime.time || "--:--"}${elapsedSuffix}`,
+          subtitle: `${bedtime.time || "--:--"}${elapsedSuffix}${pausedSuffix}`,
           state: "ongoing",
           startMs: bedMs,
           endMs: bedMs,
@@ -264,7 +268,8 @@ class NapperCard extends HTMLElement {
         const expected = this._formatDurationCompact(
           nap.expected_duration_minutes || nap.duration_minutes
         );
-        subtitle = `${nap.start_time} - ${nap.end_time}  •  ${elapsed} (~${expected})`;
+        const pausedLabel = nap.is_paused ? "  •  pausiert" : "";
+        subtitle = `${nap.start_time} - ${nap.end_time}  •  ${elapsed} (~${expected})${pausedLabel}`;
       } else if (isTracked) {
         state = "past";
         icon = "💤";
@@ -345,12 +350,89 @@ class NapperCard extends HTMLElement {
     const babyId = summary.baby_id;
     const babyName = summary.baby_name || "Baby";
     const isSleeping = Boolean(summary.is_sleeping);
+    const isNapActive =
+      Boolean(summary.is_nap_active) ||
+      (isSleeping && summary.sleep_state_de === "Nickerchen");
+    const isNapPaused = Boolean(summary.is_nap_paused);
+    const isNightSleepActive =
+      Boolean(summary.is_night_sleep_active) ||
+      Boolean(summary.bedtime?.is_open) ||
+      (isSleeping && summary.sleep_state_de === "Nachtschlaf");
+    const isNightSleepPaused = Boolean(
+      summary.is_night_sleep_paused || summary.bedtime?.is_paused
+    );
     const timelineItems = this._buildTimelineItems(summary);
-    const nowTimeStr = this._formatNowTime();
-    const awakeCompact =
-      !isSleeping && summary.awake_minutes > 0
-        ? ` • ${this._formatDurationCompact(summary.awake_minutes)} wach`
-        : "";
+
+    // Build only the currently relevant action buttons (hide all disabled buttons)
+    const actionButtons = [];
+    if (isNapActive) {
+      if (isNapPaused) {
+        actionButtons.push({
+          action: "resume_nap",
+          icon: "▶️",
+          label: "Nickerchen fortsetzen",
+          title: "Pausiertes Nickerchen fortsetzen",
+          highlighted: true,
+        });
+      } else {
+        actionButtons.push({
+          action: "pause_nap",
+          icon: "⏸️",
+          label: "Nickerchen pausieren",
+          title: "Laufendes Nickerchen pausieren",
+          highlighted: false,
+        });
+      }
+      actionButtons.push({
+        action: "wake_up",
+        icon: "☀️",
+        label: "Aufwachen",
+        title: "Aktuelles Nickerchen beenden",
+        highlighted: !isNapPaused,
+      });
+    } else if (isNightSleepActive) {
+      if (isNightSleepPaused) {
+        actionButtons.push({
+          action: "resume_sleep",
+          icon: "▶️",
+          label: "Schlafen fortsetzen",
+          title: "Nächtliches Aufwachen beenden und Nachtschlaf fortsetzen",
+          highlighted: true,
+        });
+      } else {
+        actionButtons.push({
+          action: "pause_sleep",
+          icon: "⏸️",
+          label: "Schlafen pausieren",
+          title: "Nächtliches Aufwachen starten",
+          highlighted: false,
+        });
+      }
+      actionButtons.push({
+        action: "wake_up",
+        icon: "☀️",
+        label: "Aufwachen",
+        title: "Nachtschlaf beenden (Morgens aufgewacht)",
+        highlighted: !isNightSleepPaused,
+      });
+    } else {
+      actionButtons.push(
+        {
+          action: "start_nap",
+          icon: "💤",
+          label: "Nickerchen",
+          title: "Nickerchen starten",
+          highlighted: true,
+        },
+        {
+          action: "start_sleep",
+          icon: "🌙",
+          label: "Schlafen",
+          title: "Nachtschlaf starten",
+          highlighted: false,
+        }
+      );
+    }
 
     const showTabs = Boolean(this._config.show_baby_tabs && allBabies.length > 1);
     const showHeader = Boolean(this._config.show_header && !showTabs);
@@ -541,7 +623,7 @@ class NapperCard extends HTMLElement {
         }
         .actions-bar {
           display: grid;
-          grid-template-columns: repeat(3, 1fr);
+          grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
           gap: 8px;
           align-items: stretch;
         }
@@ -645,33 +727,23 @@ class NapperCard extends HTMLElement {
         </div>
 
         ${
-          this._config.show_actions !== false
+          this._config.show_actions !== false && actionButtons.length > 0
             ? `
           <div class="divider"></div>
           <div class="actions-bar">
-            <button class="action-btn ${isSleeping ? "highlighted" : ""}"
-                    data-action="wake_up"
-                    ${!isSleeping || this._busyAction ? "disabled" : ""}
-                    title="${isSleeping ? "Aktuellen Schlaf / Nickerchen beenden" : "Nur aktiv, wenn das Kind schläft"}">
-              <span class="action-icon">☀️</span>
-              <span class="action-label">Aufwachen</span>
-            </button>
-
-            <button class="action-btn ${!isSleeping ? "highlighted" : ""}"
-                    data-action="start_nap"
-                    ${isSleeping || this._busyAction ? "disabled" : ""}
-                    title="${!isSleeping ? "Nickerchen starten" : "Nicht möglich, da das Kind bereits schläft"}">
-              <span class="action-icon">💤</span>
-              <span class="action-label">Nickerchen</span>
-            </button>
-
-            <button class="action-btn"
-                    data-action="start_sleep"
-                    ${isSleeping || this._busyAction ? "disabled" : ""}
-                    title="${!isSleeping ? "Nachtschlaf starten" : "Nicht möglich, da das Kind bereits schläft"}">
-              <span class="action-icon">🌙</span>
-              <span class="action-label">Schlafen</span>
-            </button>
+            ${actionButtons
+              .map(
+                (btn) => `
+              <button class="action-btn ${btn.highlighted ? "highlighted" : ""}"
+                      data-action="${btn.action}"
+                      ${this._busyAction ? "disabled" : ""}
+                      title="${btn.title}">
+                <span class="action-icon">${btn.icon}</span>
+                <span class="action-label">${btn.label}</span>
+              </button>
+            `
+              )
+              .join("")}
           </div>
         `
             : ""
