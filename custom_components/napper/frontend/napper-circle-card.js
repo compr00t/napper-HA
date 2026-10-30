@@ -30,35 +30,44 @@ class NapperCard extends HTMLElement {
   }
 
   setConfig(config) {
+    const safeConfig = config && typeof config === "object" ? config : {};
     const hasFixedChild = Boolean(
-      config.baby || config.child || config.baby_id || config.entity
+      safeConfig.baby || safeConfig.child || safeConfig.baby_id || safeConfig.entity
     );
     this._config = {
       show_actions: true,
       show_baby_tabs: !hasFixedChild,
       show_header: false,
-      ...config,
+      ...safeConfig,
     };
-    if (config.entity) {
-      this._selectedEntityId = config.entity;
+    if (safeConfig.entity) {
+      this._selectedEntityId = safeConfig.entity;
     } else if (hasFixedChild) {
       this._selectedEntityId = null;
     }
-    this._render();
+    try {
+      this._render();
+    } catch (err) {
+      console.error("NapperCard render error in setConfig:", err);
+    }
   }
 
   set hass(hass) {
     this._hass = hass;
-    const resolved = this._resolveConfiguredBabyEntity(hass);
-    if (resolved) {
-      this._selectedEntityId = resolved.entity_id;
-    } else if (!this._selectedEntityId) {
-      const found = this._findAllBabyEntities(hass);
-      if (found.length > 0) {
-        this._selectedEntityId = found[0].entity_id;
+    try {
+      const resolved = this._resolveConfiguredBabyEntity(hass);
+      if (resolved) {
+        this._selectedEntityId = resolved.entity_id;
+      } else if (!this._selectedEntityId) {
+        const found = this._findAllBabyEntities(hass);
+        if (found.length > 0) {
+          this._selectedEntityId = found[0].entity_id;
+        }
       }
+      this._render();
+    } catch (err) {
+      console.error("NapperCard render error in set hass:", err);
     }
-    this._render();
   }
 
   getCardSize() {
@@ -939,6 +948,54 @@ if (!customElements.get("napper-card")) {
 }
 if (!customElements.get("napper-circle-card")) {
   customElements.define("napper-circle-card", class extends NapperCard {});
+}
+
+// Recover any Lovelace cards that timed out (>2000ms on mobile app cold start)
+// before this module finished loading.
+function _rebuildTimedOutNapperCards(root = document) {
+  if (!root || !root.querySelectorAll) return;
+  try {
+    const allElements = root.querySelectorAll("*");
+    for (const el of allElements) {
+      const tag = el.tagName ? el.tagName.toLowerCase() : "";
+      if (tag === "hui-error-card") {
+        el.dispatchEvent(
+          new CustomEvent("ll-rebuild", { bubbles: true, composed: true })
+        );
+      } else if (tag === "hui-card") {
+        const cfgType = String(el._config?.type || "").toLowerCase();
+        if (
+          cfgType === "custom:napper-card" ||
+          cfgType === "custom:napper-circle-card"
+        ) {
+          const innerTag = el._element?.tagName
+            ? el._element.tagName.toLowerCase()
+            : "";
+          if (!el._element || innerTag === "hui-error-card") {
+            if (typeof el._loadElement === "function" && el._config) {
+              el._loadElement(el._config);
+            } else if (typeof el.load === "function") {
+              el.load();
+            } else {
+              el.dispatchEvent(
+                new CustomEvent("ll-rebuild", { bubbles: true, composed: true })
+              );
+            }
+          }
+        }
+      }
+      if (el.shadowRoot) {
+        _rebuildTimedOutNapperCards(el.shadowRoot);
+      }
+    }
+  } catch (_err) {
+    // Ignore DOM traversal errors
+  }
+}
+
+_rebuildTimedOutNapperCards();
+for (const delay of [100, 500, 1500, 3000]) {
+  setTimeout(() => _rebuildTimedOutNapperCards(), delay);
 }
 
 window.customCards = window.customCards || [];

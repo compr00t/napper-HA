@@ -83,13 +83,17 @@ def resolve_target_datetime(
     return now
 
 
-def get_start_minutes_after_midnight(category: str, dt: datetime.datetime) -> int:
+def get_start_minutes_after_midnight(category: str, dt: datetime.datetime) -> int | None:
     """Match Napper's getStartMinutesAfterMidnight(start, category).
 
-    When `start` is passed as the unadjusted ISO timestamp, `startMinutesAfterMidnight`
-    must be 0 so Napper's `mapLog` does not add an extra offset on top of `start`.
+    In Napper's createLogRequest, only BED_TIME sets startMinutesAfterMidnight (0 when
+    start is the unadjusted ISO timestamp). For all other categories (WOKE_UP, NAP,
+    NIGHT_WAKING), startMinutesAfterMidnight must be omitted (undefined in JS) so
+    Napper's validateLogHour parses the hour from `start` instead of treating 0 as 00:00.
     """
-    return 0
+    if category == "BED_TIME":
+        return 0
+    return None
 
 
 def create_log_id(category: str, start_iso: str) -> str:
@@ -116,17 +120,16 @@ def build_empty_log(
     category: str,
     start_iso: str,
     end_iso: str,
-    start_minutes_after_midnight: int,
+    start_minutes_after_midnight: int | None,
     user_id: str | None,
     is_open: bool = False,
 ) -> dict[str, Any]:
     """Construct a complete Napper log payload for PUT /logs/{babyId}."""
-    return {
+    payload: dict[str, Any] = {
         "id": log_id,
         "start": start_iso,
         "end": end_iso,
         "category": category,
-        "startMinutesAfterMidnight": start_minutes_after_midnight,
         "overallHappiness": None,
         "babyMoodOnWakeUp": None,
         "babyMoodOnSleep": None,
@@ -150,6 +153,9 @@ def build_empty_log(
         "timeToFallAsleep": None,
         "source": None,
     }
+    if start_minutes_after_midnight is not None:
+        payload["startMinutesAfterMidnight"] = start_minutes_after_midnight
+    return payload
 
 
 def is_jwt_expired(token: str, leeway_seconds: int = 300) -> bool:
@@ -321,7 +327,10 @@ class NapperApiClient:
         return resp.get("item", resp)
 
     async def async_put_log(self, baby_id: str, log_payload: dict[str, Any]) -> Any:
-        return await self._request("PUT", f"/logs/{baby_id}", body=log_payload)
+        payload = dict(log_payload)
+        if payload.get("startMinutesAfterMidnight") is None:
+            payload.pop("startMinutesAfterMidnight", None)
+        return await self._request("PUT", f"/logs/{baby_id}", body=payload)
 
     async def async_delete_log(
         self, baby_id: str, log_id: str, cascade_night_wakings: bool = False
@@ -649,7 +658,56 @@ class NapperApiClient:
             await self.async_put_log(baby_id, updated)
             return updated
 
-        # 2. Otherwise, end night sleep (close any open BED_TIME/NIGHT_WAKING) and create WOKE_UP log
+        # 2. Otherwise, end night sleep.
+        # Note: Napper's backend validateLogHour only allows WOKE_UP logs between 03:00 and
+        # 15:00 local time (180 <= minutes <= 900). Outside that window (e.g. ending or
+        # cancelling night sleep in the evening or before 03:00 AM), Napper's deleteNightSleep
+        # deletes the active BED_TIME log with cascadeNightWakings=true.
+        minutes_of_day = dt.hour * 60 + dt.minute
+        if minutes_of_day < 180 or minutes_of_day > 900:
+            latest_woke_dt: datetime.datetime | None = None
+            for entry in current_logs:
+                if not entry.get("skipped") and entry.get("category") == "WOKE_UP":
+                    raw_w = entry.get("start")
+                    if raw_w:
+                        try:
+                            w_dt = datetime.datetime.fromisoformat(
+                                str(raw_w).replace("Z", "+00:00")
+                            )
+                            if latest_woke_dt is None or w_dt > latest_woke_dt:
+                                latest_woke_dt = w_dt
+                        except Exception:
+                            pass
+
+            deleted_any = False
+            for entry in current_logs:
+                if entry.get("skipped") or not entry.get("id"):
+                    continue
+                cat = entry.get("category")
+                if cat == "NIGHT_WAKING" and entry.get("isOpen"):
+                    await self.async_delete_log(baby_id, entry["id"])
+                    deleted_any = True
+                elif cat == "BED_TIME":
+                    is_active_bed = bool(entry.get("isOpen"))
+                    if not is_active_bed:
+                        raw_b = entry.get("end") or entry.get("start")
+                        if raw_b:
+                            try:
+                                b_dt = datetime.datetime.fromisoformat(
+                                    str(raw_b).replace("Z", "+00:00")
+                                )
+                                if latest_woke_dt is None or b_dt > latest_woke_dt:
+                                    is_active_bed = True
+                            except Exception:
+                                pass
+                    if is_active_bed:
+                        await self.async_delete_log(
+                            baby_id, entry["id"], cascade_night_wakings=True
+                        )
+                        deleted_any = True
+            if deleted_any:
+                return {"deletedNightSleep": True}
+
         for entry in current_logs:
             if not entry.get("skipped") and entry.get("category") in ("BED_TIME", "NIGHT_WAKING"):
                 raw_ts = entry.get("end") or entry.get("start")

@@ -8,8 +8,8 @@ import pathlib
 from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, Platform
+from homeassistant.core import CoreState, Event, HomeAssistant, ServiceCall
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import voluptuous as vol
 
@@ -57,8 +57,55 @@ SERVICE_SCHEMA = vol.Schema(
 )
 
 
+CARD_VERSION = "2.6.0"
+
+
+async def _async_ensure_lovelace_resource(hass: HomeAssistant, target_url: str) -> bool:
+    """Ensure the custom card URL is registered in Lovelace storage resources."""
+    try:
+        lovelace = hass.data.get("lovelace")
+        resources = getattr(lovelace, "resources", None) or (
+            lovelace.get("resources") if isinstance(lovelace, dict) else None
+        )
+        if resources is None or not hasattr(resources, "async_items"):
+            return False
+
+        if hasattr(resources, "loaded") and not resources.loaded:
+            await resources.async_load()
+            resources.loaded = True
+
+        matching_items = [
+            item
+            for item in resources.async_items()
+            if str(item.get("url", "")).split("?")[0] == CARD_URL
+            or str(item.get("url", "")).startswith(CARD_URL)
+        ]
+        if not matching_items:
+            if hasattr(resources, "async_create_item"):
+                await resources.async_create_item(
+                    {"res_type": "module", "url": target_url}
+                )
+        else:
+            primary = matching_items[0]
+            if primary.get("url") != target_url and hasattr(
+                resources, "async_update_item"
+            ):
+                await resources.async_update_item(
+                    primary["id"], {"res_type": "module", "url": target_url}
+                )
+            # Remove any duplicate stale entries for the same card
+            if len(matching_items) > 1 and hasattr(resources, "async_delete_item"):
+                for dup in matching_items[1:]:
+                    if dup.get("id"):
+                        await resources.async_delete_item(dup["id"])
+        return True
+    except Exception as err:
+        _LOGGER.debug("Lovelace resource registration deferred/failed: %s", err)
+        return False
+
+
 async def _async_register_lovelace_card(hass: HomeAssistant) -> None:
-    """Serve and auto-register the custom Napper Circle Lovelace card."""
+    """Serve and auto-register the custom Napper Lovelace card."""
     if hass.data[DOMAIN].get("_card_registered"):
         return
 
@@ -66,48 +113,29 @@ async def _async_register_lovelace_card(hass: HomeAssistant) -> None:
     if not card_path.exists():
         return
 
+    target_url = f"{CARD_URL}?v={CARD_VERSION}"
     try:
+        # Enable cache_headers=True with versioned query string (?v=...) so the
+        # Home Assistant Mobile App WebView caches the JS module locally and defines
+        # <napper-card> immediately on cold start without hitting Lovelace's 2s timeout.
         if hasattr(hass.http, "async_register_static_paths"):
             await hass.http.async_register_static_paths(
-                [StaticPathConfig(CARD_URL, str(card_path), cache_headers=False)]
+                [StaticPathConfig(CARD_URL, str(card_path), cache_headers=True)]
             )
         else:
-            hass.http.register_static_path(CARD_URL, str(card_path), cache_headers=False)
-        add_extra_js_url(hass, f"{CARD_URL}?v=2.5.0")
+            hass.http.register_static_path(CARD_URL, str(card_path), cache_headers=True)
 
-        # Also auto-register in Lovelace storage resources if available
-        lovelace = hass.data.get("lovelace")
-        resources = getattr(lovelace, "resources", None) or (
-            lovelace.get("resources") if isinstance(lovelace, dict) else None
-        )
-        if resources is not None and hasattr(resources, "async_items"):
-            if hasattr(resources, "loaded") and not resources.loaded:
-                await resources.async_load()
-                resources.loaded = True
-            existing_item = next(
-                (
-                    item
-                    for item in resources.async_items()
-                    if str(item.get("url", "")).startswith(CARD_URL)
-                ),
-                None,
-            )
-            target_url = f"{CARD_URL}?v=2.5.0"
-            if existing_item is None and hasattr(resources, "async_create_item"):
-                await resources.async_create_item(
-                    {"res_type": "module", "url": target_url}
-                )
-            elif (
-                existing_item is not None
-                and existing_item.get("url") != target_url
-                and hasattr(resources, "async_update_item")
-            ):
-                await resources.async_update_item(
-                    existing_item["id"], {"res_type": "module", "url": target_url}
-                )
+        add_extra_js_url(hass, target_url)
+
+        registered_in_lovelace = await _async_ensure_lovelace_resource(hass, target_url)
+        if not registered_in_lovelace and hass.state is not CoreState.running:
+            async def _on_ha_started(_event: Event) -> None:
+                await _async_ensure_lovelace_resource(hass, target_url)
+
+            hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _on_ha_started)
 
         hass.data[DOMAIN]["_card_registered"] = True
-        _LOGGER.info("Registered Napper Circle Card at %s", CARD_URL)
+        _LOGGER.info("Registered Napper Card at %s", target_url)
     except Exception as err:
         _LOGGER.warning("Could not auto-register Napper Lovelace card: %s", err)
 
