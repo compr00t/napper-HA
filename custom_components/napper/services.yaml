@@ -11,9 +11,9 @@ wake_up:
         text:
     time:
       name: Uhrzeit
-      description: "Optionale absolute Uhrzeit (z. B. 17:37), zu der das Kind aufgewacht ist."
+      description: "Optionale absolute Uhrzeit (z. B. 07:15), zu der das Kind aufgewacht ist."
       required: false
-      example: "17:37:00"
+      example: "07:15:00"
       selector:
         time:
     minutes_ago:
@@ -25,14 +25,14 @@ wake_up:
       selector:
         number:
           min: 0
-          max: 120
+          max: 30
           step: 1
           unit_of_measurement: "Min."
           mode: slider
 
 start_nap:
   name: Nickerchen starten
-  description: Startet ein Nickerchen für ein Kind (nur möglich, wenn das Kind aktuell nicht schläft) – sofort, mit Zeitdifferenz oder zu einer absoluten Uhrzeit (z. B. 17:37).
+  description: Startet ein Nickerchen für ein Kind (nur möglich, wenn das Kind wach ist) – sofort, mit Zeitdifferenz oder zu einer absoluten Uhrzeit (z. B. 13:30).
   fields:
     baby_id:
       name: Kind (Baby-ID oder Name)
@@ -43,9 +43,9 @@ start_nap:
         text:
     time:
       name: Uhrzeit
-      description: "Optionale absolute Uhrzeit (z. B. 17:37), zu der das Nickerchen gestartet ist."
+      description: "Optionale absolute Uhrzeit (z. B. 13:30), zu der das Nickerchen gestartet ist."
       required: false
-      example: "17:37:00"
+      example: "13:30:00"
       selector:
         time:
     minutes_ago:
@@ -53,18 +53,50 @@ start_nap:
       description: "0 = Jetzt sofort, > 0 = vor X Minuten gestartet (falls leer/0, wird die 'Uhrzeit'- oder 'Zeitdifferenz'-Entität des Kindes verwendet)."
       required: false
       default: 0
-      example: 15
+      example: 10
       selector:
         number:
           min: 0
-          max: 120
+          max: 30
           step: 1
           unit_of_measurement: "Min."
           mode: slider
 
 start_sleep:
-  name: Schlafen starten
-  description: Startet den Nachtschlaf für ein Kind (nur möglich, wenn das Kind aktuell nicht schläft) – sofort, mit Zeitdifferenz oder zu einer absoluten Uhrzeit (z. B. 19:30).
+  name: Schlafen (Einschlafbegleitung starten)
+  description: Startet die Einschlafbegleitung vor dem Nachtschlaf (nur möglich, wenn das Kind wach ist) – sofort, mit Zeitdifferenz oder zu einer absoluten Uhrzeit (z. B. 19:15).
+  fields:
+    baby_id:
+      name: Kind (Baby-ID oder Name)
+      description: Die Napper Baby-ID oder der Name des Kindes (z. B. "Max"). Wenn leer, wird das erste Kind verwendet.
+      required: false
+      example: "Max"
+      selector:
+        text:
+    time:
+      name: Uhrzeit
+      description: "Optionale absolute Uhrzeit (z. B. 19:15), zu der die Einschlafbegleitung begonnen hat."
+      required: false
+      example: "19:15:00"
+      selector:
+        time:
+    minutes_ago:
+      name: Zeitdifferenz
+      description: "0 = Jetzt sofort, > 0 = vor X Minuten begonnen (falls leer/0, wird die 'Uhrzeit'- oder 'Zeitdifferenz'-Entität des Kindes verwendet)."
+      required: false
+      default: 0
+      example: 10
+      selector:
+        number:
+          min: 0
+          max: 30
+          step: 1
+          unit_of_measurement: "Min."
+          mode: slider
+
+fall_asleep:
+  name: Eingeschlafen (Nachtschlaf starten)
+  description: Beendet die aktive Einschlafbegleitung und startet den eigentlichen Nachtschlaf – sofort, mit Zeitdifferenz oder zu einer absoluten Uhrzeit (z. B. 19:30).
   fields:
     baby_id:
       name: Kind (Baby-ID oder Name)
@@ -85,11 +117,11 @@ start_sleep:
       description: "0 = Jetzt sofort, > 0 = vor X Minuten eingeschlafen (falls leer/0, wird die 'Uhrzeit'- oder 'Zeitdifferenz'-Entität des Kindes verwendet)."
       required: false
       default: 0
-      example: 20
+      example: 5
       selector:
         number:
           min: 0
-          max: 120
+          max: 30
           step: 1
           unit_of_measurement: "Min."
           mode: slider
@@ -121,7 +153,7 @@ pause_nap:
       selector:
         number:
           min: 0
-          max: 120
+          max: 30
           step: 1
           unit_of_measurement: "Min."
           mode: slider
@@ -153,7 +185,7 @@ resume_nap:
       selector:
         number:
           min: 0
-          max: 120
+          max: 30
           step: 1
           unit_of_measurement: "Min."
           mode: slider
@@ -185,7 +217,7 @@ pause_sleep:
       selector:
         number:
           min: 0
-          max: 120
+          max: 30
           step: 1
           unit_of_measurement: "Min."
           mode: slider
@@ -217,7 +249,7 @@ resume_sleep:
       selector:
         number:
           min: 0
-          max: 120
+          max: 30
           step: 1
           unit_of_measurement: "Min."
           mode: slider

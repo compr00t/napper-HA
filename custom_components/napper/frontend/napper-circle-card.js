@@ -190,9 +190,16 @@ class NapperCard extends HTMLElement {
     const bedtime = summary.bedtime || {};
     const upcoming = summary.upcoming_event || {};
     const naps = Array.isArray(summary.naps) ? summary.naps : [];
+    const isBedtimeRoutineActive = Boolean(
+      summary.is_bedtime_routine_active ||
+        bedtime.is_routine_open ||
+        summary.sleep_state_de === "Einschlafbegleitung"
+    );
     const isNightSleeping =
-      Boolean(bedtime.is_open) ||
-      (Boolean(summary.is_sleeping) && summary.sleep_state_de === "Nachtschlaf");
+      !isBedtimeRoutineActive &&
+      (Boolean(bedtime.is_open) ||
+        (Boolean(summary.is_sleeping) &&
+          String(summary.sleep_state_de || "").startsWith("Nachtschlaf")));
 
     // Night-sleep view: Schlafenszeit on top, predicted Aufwachzeit on the bottom
     if (isNightSleeping) {
@@ -305,16 +312,28 @@ class NapperCard extends HTMLElement {
       });
     });
 
-    // 3. Schlafenszeit ("Night Sleep")
+    // 3. Schlafenszeit ("Night Sleep") / Einschlafbegleitung
     const bedMs = bedtime.iso ? Date.parse(bedtime.iso) : null;
-    const bedOngoing = Boolean(bedtime.is_open || isNightSleeping);
+    const bedOngoing = Boolean(
+      isBedtimeRoutineActive || bedtime.is_open || isNightSleeping
+    );
     const bedInPast = Boolean(bedtime.is_tracked && !bedOngoing);
+    let bedTitle = "Schlafenszeit";
+    let bedSubtitle = bedtime.time || "--:--";
+    if (isBedtimeRoutineActive) {
+      bedTitle = "Einschlafbegleitung";
+      const routineElapsed =
+        bedtime.duration_minutes > 0
+          ? `  •  ${this._formatDurationCompact(bedtime.duration_minutes)}`
+          : "";
+      bedSubtitle = `${bedtime.time || "--:--"}${routineElapsed}`;
+    }
     items.push({
       id: "bedtime",
       type: "bedtime",
       icon: "🌙",
-      title: "Schlafenszeit",
-      subtitle: bedtime.time || "--:--",
+      title: bedTitle,
+      subtitle: bedSubtitle,
       state: bedOngoing ? "ongoing" : bedInPast ? "past" : "future",
       startMs: bedMs,
       endMs: bedMs,
@@ -363,10 +382,17 @@ class NapperCard extends HTMLElement {
       Boolean(summary.is_nap_active) ||
       (isSleeping && summary.sleep_state_de === "Nickerchen");
     const isNapPaused = Boolean(summary.is_nap_paused);
+    const isBedtimeRoutineActive = Boolean(
+      summary.is_bedtime_routine_active ||
+        summary.bedtime?.is_routine_open ||
+        summary.sleep_state_de === "Einschlafbegleitung"
+    );
     const isNightSleepActive =
-      Boolean(summary.is_night_sleep_active) ||
-      Boolean(summary.bedtime?.is_open) ||
-      (isSleeping && summary.sleep_state_de === "Nachtschlaf");
+      !isBedtimeRoutineActive &&
+      (Boolean(summary.is_night_sleep_active) ||
+        Boolean(summary.bedtime?.is_open) ||
+        (isSleeping &&
+          String(summary.sleep_state_de || "").startsWith("Nachtschlaf")));
     const isNightSleepPaused = Boolean(
       summary.is_night_sleep_paused || summary.bedtime?.is_paused
     );
@@ -398,6 +424,14 @@ class NapperCard extends HTMLElement {
         label: "Aufwachen",
         title: "Aktuelles Nickerchen beenden",
         highlighted: !isNapPaused,
+      });
+    } else if (isBedtimeRoutineActive) {
+      actionButtons.push({
+        action: "fall_asleep",
+        icon: "🌙",
+        label: "Eingeschlafen",
+        title: "Einschlafbegleitung beenden und Nachtschlaf starten",
+        highlighted: true,
       });
     } else if (isNightSleepActive) {
       if (isNightSleepPaused) {
@@ -437,7 +471,7 @@ class NapperCard extends HTMLElement {
           action: "start_sleep",
           icon: "🌙",
           label: "Schlafen",
-          title: "Nachtschlaf starten",
+          title: "Einschlafbegleitung starten",
           highlighted: false,
         }
       );
@@ -997,6 +1031,98 @@ _rebuildTimedOutNapperCards();
 for (const delay of [100, 500, 1500, 3000]) {
   setTimeout(() => _rebuildTimedOutNapperCards(), delay);
 }
+
+// Auto-advance focus from hours ('hh') to minutes ('mm') in Home Assistant's
+// <ha-base-time-input> ('Uhrzeit' time selector) as soon as 2 digits are entered.
+function _collectTimeInputs(root, out = []) {
+  if (!root) return out;
+  const children = root.children || root.childNodes || [];
+  for (const node of children) {
+    if (!node || node.nodeType !== 1) continue;
+    const tag = node.tagName ? node.tagName.toLowerCase() : "";
+    if (tag === "ha-select" || tag === "select") {
+      continue;
+    }
+    if (tag === "input" && node.type !== "hidden") {
+      out.push(node);
+    } else if (node.shadowRoot) {
+      _collectTimeInputs(node.shadowRoot, out);
+    } else {
+      _collectTimeInputs(node, out);
+    }
+  }
+  return out;
+}
+
+function _installTimeInputAutoAdvance() {
+  if (window.__napperTimeAutoAdvanceInstalled) return;
+  window.__napperTimeAutoAdvanceInstalled = true;
+
+  let lastDigitKeydownMs = 0;
+  window.addEventListener(
+    "keydown",
+    (event) => {
+      if (event && typeof event.key === "string" && /^\d$/.test(event.key)) {
+        lastDigitKeydownMs = Date.now();
+      }
+    },
+    true
+  );
+
+  window.addEventListener(
+    "input",
+    (event) => {
+      try {
+        const inputType = event.inputType || "";
+        const typedChar = typeof event.data === "string" ? event.data : "";
+        if (inputType && !inputType.startsWith("insert")) return;
+
+        const isDigitTyped =
+          /^\d$/.test(typedChar) ||
+          (!inputType && !typedChar && Date.now() - lastDigitKeydownMs < 250);
+        if (!isDigitTyped) return;
+
+        const path =
+          typeof event.composedPath === "function" ? event.composedPath() : [];
+        const targetInput = path.find(
+          (el) => el && el.tagName && el.tagName.toLowerCase() === "input"
+        );
+        if (!targetInput) return;
+
+        const baseTimeInput = path.find(
+          (el) =>
+            el &&
+            el.tagName &&
+            el.tagName.toLowerCase() === "ha-base-time-input"
+        );
+        if (!baseTimeInput || !baseTimeInput.shadowRoot) return;
+
+        const inputs = _collectTimeInputs(baseTimeInput.shadowRoot);
+        if (inputs.length < 2 || inputs[0] !== targetInput) return;
+
+        const rawVal = String(targetInput.value ?? "").trim();
+        if (!/^\d{2}$/.test(rawVal)) return;
+
+        const mmInput = inputs[1];
+        setTimeout(() => {
+          try {
+            mmInput.focus();
+            if (typeof mmInput.select === "function") {
+              mmInput.select();
+            }
+          } catch (_err) {
+            // Ignore focus errors
+          }
+        }, 0);
+      } catch (_err) {
+        // Ignore delegation errors
+      }
+    },
+    true
+  );
+}
+
+_installTimeInputAutoAdvance();
 
 window.customCards = window.customCards || [];
 if (!window.customCards.some((c) => c.type === "napper-card")) {

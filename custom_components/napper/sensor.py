@@ -20,6 +20,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, MAX_NAP_SENSORS
 from .coordinator import NapperCoordinator, nap_label_de, parse_napper_iso
+from .entity import NapperTimestampedEntity
 
 
 async def async_setup_entry(
@@ -54,7 +55,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class NapperBaseSensor(CoordinatorEntity[NapperCoordinator], SensorEntity):
+class NapperBaseSensor(CoordinatorEntity[NapperCoordinator], NapperTimestampedEntity, SensorEntity):
     """Base class for Napper sensors."""
 
     _attr_has_entity_name = True
@@ -95,6 +96,9 @@ class NapperUpcomingEventSensor(NapperBaseSensor):
         upcoming = self._summary().get("upcoming_event", {})
         return parse_napper_iso(upcoming.get("target_iso"))
 
+    def _state_changed_dt(self) -> datetime.datetime | None:
+        return parse_napper_iso(self._summary().get("sleep_state_changed_iso"))
+
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         summary = self._summary()
@@ -115,7 +119,7 @@ class NapperUpcomingEventSensor(NapperBaseSensor):
 
 
 class NapperSleepStatusSensor(NapperBaseSensor):
-    """Current sleep status in German (Wach, Nickerchen, Nachtschlaf, Nächtliches Aufwachen) + full circle data."""
+    """Current sleep status in German (Wach, Nickerchen, Einschlafbegleitung, Nachtschlaf)."""
 
     _attr_name = "Schlafstatus"
     _attr_icon = "mdi:baby-face-outline"
@@ -127,22 +131,22 @@ class NapperSleepStatusSensor(NapperBaseSensor):
     def native_value(self) -> str:
         return self._summary().get("sleep_state_de", "Wach")
 
+    def _state_changed_dt(self) -> datetime.datetime | None:
+        return parse_napper_iso(self._summary().get("sleep_state_changed_iso"))
+
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         summary = self._summary()
         return {
             "baby_id": self._baby_id,
             "baby_name": summary.get("baby_name"),
+            "zustand_seit_iso": summary.get("sleep_state_changed_iso"),
             "aufwachzeit": summary.get("wake_up", {}).get("time"),
             "aufwachzeit_status": summary.get("wake_up", {}).get("status"),
             "schlafenszeit": summary.get("bedtime", {}).get("time"),
             "schlafenszeit_status": summary.get("bedtime", {}).get("status"),
-            "wachzeit": summary.get("awake_short"),
             "tagesschlaf_getrackt": summary.get("total_tracked_sleep_short"),
             "tagesschlaf_erwartet": summary.get("total_expected_sleep_short"),
-            "naechstes_ereignis": summary.get("upcoming_event", {}).get("state_text_de"),
-            "nickerchen": summary.get("naps", []),
-            "summary": summary,
         }
 
 
@@ -159,6 +163,12 @@ class NapperWakeUpSensor(NapperBaseSensor):
     def native_value(self) -> str | None:
         wake = self._summary().get("wake_up", {})
         return wake.get("time")
+
+    def _state_changed_dt(self) -> datetime.datetime | None:
+        wake = self._summary().get("wake_up", {})
+        if wake.get("is_tracked"):
+            return parse_napper_iso(wake.get("iso"))
+        return None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -185,6 +195,12 @@ class NapperBedtimeSensor(NapperBaseSensor):
     def native_value(self) -> str | None:
         bed = self._summary().get("bedtime", {})
         return bed.get("time")
+
+    def _state_changed_dt(self) -> datetime.datetime | None:
+        bed = self._summary().get("bedtime", {})
+        if bed.get("is_tracked") or bed.get("is_open") or bed.get("is_routine_open"):
+            return parse_napper_iso(bed.get("iso"))
+        return None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -214,6 +230,12 @@ class NapperAwakeDurationSensor(NapperBaseSensor):
     def native_value(self) -> int:
         return int(self._summary().get("awake_minutes", 0))
 
+    def _state_changed_dt(self) -> datetime.datetime | None:
+        summary = self._summary()
+        if summary.get("is_sleeping"):
+            return parse_napper_iso(summary.get("sleeping_binary_changed_iso"))
+        return None
+
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         summary = self._summary()
@@ -240,6 +262,18 @@ class NapperTotalDaySleepSensor(NapperBaseSensor):
     @property
     def native_value(self) -> int:
         return int(self._summary().get("total_tracked_sleep_minutes", 0))
+
+    def _state_changed_dt(self) -> datetime.datetime | None:
+        summary = self._summary()
+        if summary.get("is_nap_active"):
+            return None
+        last_nap_end = summary.get("last_completed_nap_end_iso")
+        if last_nap_end:
+            return parse_napper_iso(last_nap_end)
+        wake = summary.get("wake_up", {})
+        if wake.get("is_tracked"):
+            return parse_napper_iso(wake.get("iso"))
+        return None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -284,8 +318,16 @@ class NapperNapSensor(NapperBaseSensor):
         end = nap.get("end_time")
         dur = nap.get("duration_formatted")
         if nap.get("is_open"):
-            return f"Aktiv seit {start} ({dur})"
+            if nap.get("is_paused"):
+                return f"Pausiert (seit {start})"
+            return f"Aktiv seit {start}"
         return f"{start} – {end} ({dur})"
+
+    def _state_changed_dt(self) -> datetime.datetime | None:
+        nap = self._nap_data()
+        if nap and nap.get("is_tracked"):
+            return parse_napper_iso(nap.get("state_changed_iso") or nap.get("start_iso"))
+        return None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

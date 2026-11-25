@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 from typing import Any
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
@@ -12,7 +13,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .coordinator import NapperCoordinator
+from .coordinator import NapperCoordinator, parse_napper_iso
+from .entity import NapperTimestampedEntity
 
 
 async def async_setup_entry(
@@ -29,7 +31,9 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class NapperSleepingBinarySensor(CoordinatorEntity[NapperCoordinator], BinarySensorEntity):
+class NapperSleepingBinarySensor(
+    CoordinatorEntity[NapperCoordinator], NapperTimestampedEntity, BinarySensorEntity
+):
     """Binary sensor indicating whether the child is currently sleeping."""
 
     _attr_has_entity_name = True
@@ -56,23 +60,35 @@ class NapperSleepingBinarySensor(CoordinatorEntity[NapperCoordinator], BinarySen
     def _get_open_sleep_log(self) -> dict[str, Any] | None:
         logs = self.coordinator.data.get(self._baby_id, {}).get("logs", [])
         for entry in logs:
-            if entry.get("isOpen") and entry.get("category") in ("NAP", "BED_TIME"):
+            if entry.get("isOpen") and entry.get("category") == "NAP":
                 return entry
         return None
 
     @property
     def is_on(self) -> bool:
-        """Return true if an open NAP or BED_TIME timer is active."""
+        """Return true if an open NAP or active night sleep is running."""
         summary = self.coordinator.data.get(self._baby_id, {}).get("summary", {})
         if "is_sleeping" in summary:
             return bool(summary["is_sleeping"])
         return self._get_open_sleep_log() is not None
+
+    def _state_changed_dt(self) -> datetime.datetime | None:
+        summary = self.coordinator.data.get(self._baby_id, {}).get("summary", {})
+        return parse_napper_iso(summary.get("sleeping_binary_changed_iso"))
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return details about the active sleep session."""
         open_log = self._get_open_sleep_log()
         summary = self.coordinator.data.get(self._baby_id, {}).get("summary", {})
+        if summary.get("is_night_sleep_active"):
+            return {
+                "baby_id": self._baby_id,
+                "schlafstatus": summary.get("sleep_state_de", "Nachtschlaf"),
+                "category": "BED_TIME",
+                "log_id": None,
+                "started_at": summary.get("bedtime", {}).get("iso"),
+            }
         if not open_log:
             return {
                 "baby_id": self._baby_id,

@@ -22,6 +22,7 @@ from .const import (
     CONF_REFRESH_TOKEN,
     CONF_USER_ID,
     DOMAIN,
+    SERVICE_FALL_ASLEEP,
     SERVICE_LOG_BEDTIME,
     SERVICE_LOG_WAKE_UP,
     SERVICE_PAUSE_NAP,
@@ -57,7 +58,7 @@ SERVICE_SCHEMA = vol.Schema(
 )
 
 
-CARD_VERSION = "2.6.0"
+CARD_VERSION = "2.7.0"
 
 
 async def _async_ensure_lovelace_resource(hass: HomeAssistant, target_url: str) -> bool:
@@ -218,6 +219,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             baby_id, minutes_ago=minutes_ago, target_dt=target_dt
         )
 
+    async def _handle_fall_asleep(call: ServiceCall) -> None:
+        coord, baby_id = _resolve_coordinator_and_baby(call)
+        target_dt, minutes_ago = coord.pop_action_timing(
+            baby_id,
+            explicit_time=call.data.get("time"),
+            explicit_minutes_ago=int(call.data.get("minutes_ago", 0)),
+        )
+        await coord.async_fall_asleep(
+            baby_id, minutes_ago=minutes_ago, target_dt=target_dt
+        )
+
     async def _handle_pause_nap(call: ServiceCall) -> None:
         coord, baby_id = _resolve_coordinator_and_baby(call)
         target_dt, minutes_ago = coord.pop_action_timing(
@@ -277,6 +289,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         hass.services.async_register(
             DOMAIN, SERVICE_START_SLEEP, _handle_start_sleep, schema=SERVICE_SCHEMA
+        )
+        hass.services.async_register(
+            DOMAIN, SERVICE_FALL_ASLEEP, _handle_fall_asleep, schema=SERVICE_SCHEMA
         )
         hass.services.async_register(
             DOMAIN, SERVICE_PAUSE_SLEEP, _handle_pause_sleep, schema=SERVICE_SCHEMA

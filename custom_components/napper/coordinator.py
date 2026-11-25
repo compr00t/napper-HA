@@ -93,6 +93,8 @@ def compute_day_summary(
     open_night_waking_log: dict[str, Any] | None = None
     latest_bedtime_dt: datetime.datetime | None = None
     latest_woke_up_dt: datetime.datetime | None = None
+    latest_closed_night_waking_end_dt: datetime.datetime | None = None
+    last_tracked_awake_dt: datetime.datetime | None = None
 
     for entry in logs:
         if entry.get("skipped"):
@@ -106,6 +108,21 @@ def compute_day_summary(
         elif cat == "WOKE_UP" and start_dt is not None:
             if latest_woke_up_dt is None or start_dt > latest_woke_up_dt:
                 latest_woke_up_dt = start_dt
+            if start_dt <= now and (
+                last_tracked_awake_dt is None or start_dt > last_tracked_awake_dt
+            ):
+                last_tracked_awake_dt = start_dt
+        elif cat == "NAP" and not entry.get("isOpen") and end_dt is not None:
+            if end_dt <= now and (
+                last_tracked_awake_dt is None or end_dt > last_tracked_awake_dt
+            ):
+                last_tracked_awake_dt = end_dt
+        elif cat == "NIGHT_WAKING" and not entry.get("isOpen") and end_dt is not None:
+            if (
+                latest_closed_night_waking_end_dt is None
+                or end_dt > latest_closed_night_waking_end_dt
+            ):
+                latest_closed_night_waking_end_dt = end_dt
 
         if entry.get("isOpen"):
             if cat == "NAP" and open_nap_log is None:
@@ -204,12 +221,27 @@ def compute_day_summary(
             is_paused = is_nap_log_paused(nap_log)
             now_ms = int(now.timestamp() * 1000)
             pause_ms = 0
-            for p in nap_log.get("pauses") or []:
-                if isinstance(p, dict) and p.get("start"):
-                    p_start = int(p["start"])
-                    p_end = int(p["end"]) if p.get("end") else now_ms
-                    if p_end > p_start:
-                        pause_ms += p_end - p_start
+            pauses_list = [
+                p for p in (nap_log.get("pauses") or []) if isinstance(p, dict) and p.get("start")
+            ]
+            for p in pauses_list:
+                p_start = int(p["start"])
+                p_end = int(p["end"]) if p.get("end") else now_ms
+                if p_end > p_start:
+                    pause_ms += p_end - p_start
+
+            nap_state_changed_dt = start_dt
+            if pauses_list:
+                last_p = pauses_list[-1]
+                if is_paused and last_p.get("start"):
+                    nap_state_changed_dt = datetime.datetime.fromtimestamp(
+                        int(last_p["start"]) / 1000.0, tz=local_tz
+                    )
+                elif not is_paused and last_p.get("end"):
+                    nap_state_changed_dt = datetime.datetime.fromtimestamp(
+                        int(last_p["end"]) / 1000.0, tz=local_tz
+                    )
+
             raw_elapsed_sec = max(0.0, (now - start_dt).total_seconds() - pause_ms / 1000.0)
             elapsed_min = max(0, round(raw_elapsed_sec / 60))
             expected_end_dt = start_dt + datetime.timedelta(minutes=expected_dur)
@@ -224,6 +256,7 @@ def compute_day_summary(
                     "end_time": expected_end_dt.strftime("%H:%M"),
                     "start_iso": start_dt.isoformat(),
                     "end_iso": expected_end_dt.isoformat(),
+                    "state_changed_iso": nap_state_changed_dt.isoformat(),
                     "duration_minutes": elapsed_min,
                     "expected_duration_minutes": expected_dur,
                     "duration_formatted": format_duration_de(elapsed_min),
@@ -248,12 +281,14 @@ def compute_day_summary(
                     "end_time": end_dt.strftime("%H:%M"),
                     "start_iso": start_dt.isoformat(),
                     "end_iso": end_dt.isoformat(),
+                    "state_changed_iso": end_dt.isoformat(),
                     "duration_minutes": dur_min,
                     "expected_duration_minutes": expected_dur,
                     "duration_formatted": format_duration_de(dur_min),
                     "duration_short": format_duration_short(dur_min),
                     "is_tracked": True,
                     "is_open": False,
+                    "is_paused": False,
                     "status": "getrackt",
                     "log_id": nap_log.get("id"),
                 }
@@ -292,7 +327,7 @@ def compute_day_summary(
             }
         )
 
-    # 5. Find today's BED_TIME (tracked or expected)
+    # 5. Find today's BED_TIME (tracked, active Einschlafbegleitung, or expected)
     today_bedtime_log: dict[str, Any] | None = None
     for entry in logs:
         if entry.get("category") != "BED_TIME" or entry.get("skipped"):
@@ -300,7 +335,11 @@ def compute_day_summary(
         dt = parse_napper_iso(entry.get("end") or entry.get("start"), local_tz)
         if dt is None:
             continue
-        if (wake_is_tracked and dt >= wake_dt) or (dt.date() == now.date() and dt.hour >= 16):
+        if (
+            entry.get("isOpen")
+            or (wake_is_tracked and dt >= wake_dt)
+            or (dt.date() == now.date() and dt.hour >= 16)
+        ):
             today_bedtime_log = entry
             break
 
@@ -313,16 +352,29 @@ def compute_day_summary(
         None,
     )
 
+    bed_is_routine_open = False
+    routine_elapsed_min = 0
     if today_bedtime_log is not None:
-        bed_dt = (
-            parse_napper_iso(
-                today_bedtime_log.get("end") or today_bedtime_log.get("start"),
-                local_tz,
+        if today_bedtime_log.get("isOpen"):
+            bed_dt = (
+                parse_napper_iso(today_bedtime_log.get("start"), local_tz) or now
             )
-            or now
-        )
-        bed_is_tracked = not bool(today_bedtime_log.get("isOpen"))
-        bed_is_open = False
+            bed_is_tracked = False
+            bed_is_open = False
+            bed_is_routine_open = True
+            routine_elapsed_min = max(
+                0, round((now - bed_dt).total_seconds() / 60)
+            )
+        else:
+            bed_dt = (
+                parse_napper_iso(
+                    today_bedtime_log.get("end") or today_bedtime_log.get("start"),
+                    local_tz,
+                )
+                or now
+            )
+            bed_is_tracked = True
+            bed_is_open = False
     elif sched_bedtime is not None:
         bed_dt = (
             parse_napper_iso(sched_bedtime.get("time") or sched_bedtime.get("start"), local_tz)
@@ -335,12 +387,19 @@ def compute_day_summary(
         bed_is_tracked = False
         bed_is_open = False
 
-    bedtime_info = {
+    bedtime_info: dict[str, Any] = {
         "time": bed_dt.strftime("%H:%M"),
         "iso": bed_dt.isoformat(),
         "is_tracked": bed_is_tracked,
         "is_open": bed_is_open,
-        "status": "getrackt" if bed_is_tracked else "erwartet",
+        "is_routine_open": bed_is_routine_open,
+        "status": (
+            "einschlafbegleitung"
+            if bed_is_routine_open
+            else ("getrackt" if bed_is_tracked else "erwartet")
+        ),
+        "duration_minutes": routine_elapsed_min,
+        "duration_short": format_duration_short(routine_elapsed_min),
         "timestamp": bed_dt.timestamp(),
     }
 
@@ -368,7 +427,7 @@ def compute_day_summary(
     now_ratio = max(0.0, min(1.0, (now.timestamp() - arc_start_ts) / arc_span_sec))
     now_angle_deg = _ts_to_angle(now.timestamp())
 
-    # 7. Sleep state & awake duration
+    # 7. Sleep state, API event timestamps & awake duration
     unclosed_night_sleep = (
         latest_bedtime_dt is not None
         and (now - latest_bedtime_dt).total_seconds() <= 18 * 3600
@@ -376,31 +435,83 @@ def compute_day_summary(
     )
     is_nap_active = open_nap_log is not None
     is_nap_paused = is_nap_log_paused(open_nap_log)
-    is_night_sleep_active = not is_nap_active and (
-        unclosed_night_sleep or open_night_waking_log is not None
+    is_bedtime_routine_active = not is_nap_active and open_bedtime_log is not None
+    is_night_sleep_active = (
+        not is_nap_active
+        and not is_bedtime_routine_active
+        and (unclosed_night_sleep or open_night_waking_log is not None)
     )
     is_night_sleep_paused = is_night_sleep_active and (open_night_waking_log is not None)
+
+    sleep_state_changed_dt: datetime.datetime | None = None
+    sleeping_binary_changed_dt: datetime.datetime | None = None
 
     if is_nap_active:
         sleep_state_de = "Nickerchen (pausiert)" if is_nap_paused else "Nickerchen"
         is_sleeping = True
+        nap_start_dt = parse_napper_iso(
+            open_nap_log.get("start") if open_nap_log else None, local_tz
+        )
+        sleeping_binary_changed_dt = nap_start_dt
+        sleep_state_changed_dt = nap_start_dt
+        open_pauses = [
+            p
+            for p in ((open_nap_log or {}).get("pauses") or [])
+            if isinstance(p, dict) and p.get("start")
+        ]
+        if open_pauses:
+            last_p = open_pauses[-1]
+            if is_nap_paused and last_p.get("start"):
+                sleep_state_changed_dt = datetime.datetime.fromtimestamp(
+                    int(last_p["start"]) / 1000.0, tz=local_tz
+                )
+            elif not is_nap_paused and last_p.get("end"):
+                sleep_state_changed_dt = datetime.datetime.fromtimestamp(
+                    int(last_p["end"]) / 1000.0, tz=local_tz
+                )
     elif is_night_sleep_active:
         sleep_state_de = "Nachtschlaf (pausiert)" if is_night_sleep_paused else "Nachtschlaf"
         is_sleeping = True
-    elif open_bedtime_log is not None:
+        sleeping_binary_changed_dt = latest_bedtime_dt
+        if is_night_sleep_paused and open_night_waking_log is not None:
+            sleep_state_changed_dt = parse_napper_iso(
+                open_night_waking_log.get("start"), local_tz
+            )
+        else:
+            sleep_state_changed_dt = latest_bedtime_dt
+            if (
+                latest_closed_night_waking_end_dt is not None
+                and latest_bedtime_dt is not None
+                and latest_closed_night_waking_end_dt > latest_bedtime_dt
+            ):
+                sleep_state_changed_dt = latest_closed_night_waking_end_dt
+    elif is_bedtime_routine_active and open_bedtime_log is not None:
         sleep_state_de = "Einschlafbegleitung"
         is_sleeping = False
+        sleep_state_changed_dt = parse_napper_iso(
+            open_bedtime_log.get("start"), local_tz
+        )
+        sleeping_binary_changed_dt = last_tracked_awake_dt
     else:
         sleep_state_de = "Wach"
         is_sleeping = False
+        sleep_state_changed_dt = last_tracked_awake_dt
+        sleeping_binary_changed_dt = last_tracked_awake_dt
 
     # Awake time since last wake-up or end of last completed nap
     last_awake_since_dt = wake_dt
+    last_completed_nap_end_dt: datetime.datetime | None = None
     for nap_log in today_nap_logs:
         if not nap_log.get("isOpen") and not nap_log.get("skipped"):
             e_dt = parse_napper_iso(nap_log.get("end"), local_tz)
-            if e_dt and e_dt > last_awake_since_dt:
-                last_awake_since_dt = e_dt
+            if e_dt:
+                if e_dt > last_awake_since_dt:
+                    last_awake_since_dt = e_dt
+                if (
+                    last_completed_nap_end_dt is None
+                    or e_dt > last_completed_nap_end_dt
+                ):
+                    last_completed_nap_end_dt = e_dt
 
     if is_sleeping:
         awake_minutes = 0
@@ -488,6 +599,27 @@ def compute_day_summary(
             "target_time": target_hm,
             "target_iso": next_wake_dt.isoformat(),
         }
+    elif is_bedtime_routine_active:
+        target_dt = bed_dt + datetime.timedelta(minutes=15)
+        if sched_bedtime is not None:
+            sched_bed_dt = parse_napper_iso(
+                sched_bedtime.get("time") or sched_bedtime.get("start"), local_tz
+            )
+            if sched_bed_dt is not None and sched_bed_dt > bed_dt:
+                target_dt = sched_bed_dt
+        mins_left = round((target_dt - now).total_seconds() / 60)
+        target_hm = target_dt.strftime("%H:%M")
+        upcoming_event = {
+            "type": "FALL_ASLEEP",
+            "title_de": "Einschlafbegleitung aktiv",
+            "state_text_de": f"Einschlafbegleitung läuft seit {format_duration_de(routine_elapsed_min)}",
+            "minutes_until": max(0, mins_left),
+            "raw_minutes_until": mins_left,
+            "countdown_text": format_duration_short(routine_elapsed_min),
+            "subtitle_de": f"Seit {bed_dt.strftime('%H:%M')}",
+            "target_time": target_hm,
+            "target_iso": target_dt.isoformat(),
+        }
     elif next_expected_nap is not None:
         target_dt = parse_napper_iso(next_expected_nap["start_iso"], local_tz) or now
         mins_left = round((target_dt - now).total_seconds() / 60)
@@ -537,9 +669,26 @@ def compute_day_summary(
         "baby_id": baby_info.get("id"),
         "baby_name": baby_info.get("name", "Baby"),
         "sleep_state_de": sleep_state_de,
+        "sleep_state_changed_iso": (
+            sleep_state_changed_dt.isoformat() if sleep_state_changed_dt else None
+        ),
+        "sleeping_binary_changed_iso": (
+            sleeping_binary_changed_dt.isoformat()
+            if sleeping_binary_changed_dt
+            else None
+        ),
+        "last_tracked_awake_iso": (
+            last_tracked_awake_dt.isoformat() if last_tracked_awake_dt else None
+        ),
+        "last_completed_nap_end_iso": (
+            last_completed_nap_end_dt.isoformat()
+            if last_completed_nap_end_dt
+            else None
+        ),
         "is_sleeping": is_sleeping,
         "is_nap_active": is_nap_active,
         "is_nap_paused": is_nap_paused,
+        "is_bedtime_routine_active": is_bedtime_routine_active,
         "is_night_sleep_active": is_night_sleep_active,
         "is_night_sleep_paused": is_night_sleep_paused,
         "wake_up": wake_up_info,
@@ -590,8 +739,8 @@ class NapperCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         return int(self.minutes_ago_offset.get(baby_id, 0))
 
     def set_minutes_ago(self, baby_id: str, minutes: int) -> None:
-        """Set the 'Zeitdifferenz' offset for a baby and notify listeners."""
-        val = max(0, int(minutes))
+        """Set the 'Zeitdifferenz' offset (0..30 min) for a baby and notify listeners."""
+        val = max(0, min(30, int(minutes)))
         self.minutes_ago_offset[baby_id] = val
         if val > 0:
             self.absolute_time_input[baby_id] = ""
@@ -689,16 +838,24 @@ class NapperCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             self.data[baby_id].get("summary", {}).get("is_night_sleep_paused", False)
         )
 
+    def is_bedtime_routine_active(self, baby_id: str) -> bool:
+        """Return True if 'Einschlafbegleitung' (pre-bedtime routine) is currently active."""
+        if not self.data or baby_id not in self.data:
+            return False
+        return bool(
+            self.data[baby_id].get("summary", {}).get("is_bedtime_routine_active", False)
+        )
+
     async def async_start_nap(
         self,
         baby_id: str,
         minutes_ago: int = 0,
         target_dt: datetime.datetime | None = None,
     ) -> None:
-        """Start a nap only if the child is not currently sleeping."""
-        if self.is_child_sleeping(baby_id):
+        """Start a nap only if the child is awake and not in Einschlafbegleitung."""
+        if self.is_child_sleeping(baby_id) or self.is_bedtime_routine_active(baby_id):
             raise HomeAssistantError(
-                "Nickerchen kann nicht gestartet werden, da das Kind bereits schläft."
+                "Nickerchen kann nicht gestartet werden, da das Kind bereits schläft oder in der Einschlafbegleitung ist."
             )
         await self.client.async_start_open_nap(
             baby_id, start_dt=target_dt, minutes_ago=minutes_ago
@@ -745,14 +902,31 @@ class NapperCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         minutes_ago: int = 0,
         target_dt: datetime.datetime | None = None,
     ) -> None:
-        """Start night sleep only if the child is not currently sleeping."""
-        if self.is_child_sleeping(baby_id):
+        """Start 'Einschlafbegleitung' before night sleep ('Schlafen')."""
+        if self.is_child_sleeping(baby_id) or self.is_bedtime_routine_active(baby_id):
             raise HomeAssistantError(
-                "Nachtschlaf kann nicht gestartet werden, da das Kind bereits schläft."
+                "Einschlafbegleitung kann nicht gestartet werden, da das Kind bereits schläft oder die Einschlafbegleitung bereits aktiv ist."
             )
         logs = (self.data or {}).get(baby_id, {}).get("logs")
-        await self.client.async_start_bedtime(
+        await self.client.async_start_bedtime_routine(
             baby_id, current_logs=logs, start_dt=target_dt, minutes_ago=minutes_ago
+        )
+        await self.async_request_refresh()
+
+    async def async_fall_asleep(
+        self,
+        baby_id: str,
+        minutes_ago: int = 0,
+        target_dt: datetime.datetime | None = None,
+    ) -> None:
+        """Confirm 'Eingeschlafen': end active Einschlafbegleitung and start night sleep."""
+        if not self.is_bedtime_routine_active(baby_id):
+            raise HomeAssistantError(
+                "Eingeschlafen ist nur möglich, wenn gerade die Einschlafbegleitung aktiv ist."
+            )
+        logs = (self.data or {}).get(baby_id, {}).get("logs")
+        await self.client.async_finish_bedtime_routine(
+            baby_id, current_logs=logs, end_dt=target_dt, minutes_ago=minutes_ago
         )
         await self.async_request_refresh()
 
@@ -796,8 +970,10 @@ class NapperCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         minutes_ago: int = 0,
         target_dt: datetime.datetime | None = None,
     ) -> None:
-        """Wake up (end active nap or night sleep) only if currently sleeping."""
-        if not self.is_child_sleeping(baby_id):
+        """Wake up (end active nap or night sleep, or cancel Einschlafbegleitung)."""
+        if not self.is_child_sleeping(baby_id) and not self.is_bedtime_routine_active(
+            baby_id
+        ):
             raise HomeAssistantError(
                 "Aufwachen ist nur möglich, wenn gerade ein Nickerchen oder Nachtschlaf läuft."
             )

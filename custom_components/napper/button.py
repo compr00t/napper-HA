@@ -36,6 +36,7 @@ async def async_setup_entry(
                 NapperPauseNapButton(coordinator, baby_id),
                 NapperResumeNapButton(coordinator, baby_id),
                 NapperStartSleepButton(coordinator, baby_id),
+                NapperFallAsleepButton(coordinator, baby_id),
                 NapperPauseSleepButton(coordinator, baby_id),
                 NapperResumeSleepButton(coordinator, baby_id),
             ]
@@ -96,8 +97,12 @@ class NapperStartNapButton(NapperBaseButton):
 
     @property
     def available(self) -> bool:
-        """Only available when the child is not currently sleeping."""
-        return super().available and not self.coordinator.is_child_sleeping(self._baby_id)
+        """Only available when the child is awake and not in Einschlafbegleitung."""
+        return (
+            super().available
+            and not self.coordinator.is_child_sleeping(self._baby_id)
+            and not self.coordinator.is_bedtime_routine_active(self._baby_id)
+        )
 
     async def async_press(self) -> None:
         target_dt, minutes_ago = self.coordinator.pop_action_timing(self._baby_id)
@@ -153,7 +158,7 @@ class NapperResumeNapButton(NapperBaseButton):
 
 
 class NapperStartSleepButton(NapperBaseButton):
-    """Button to start nighttime sleep / BED_TIME (only when child is not sleeping)."""
+    """Button to start 'Einschlafbegleitung' before night sleep ('Schlafen')."""
 
     _attr_name = "Schlafen"
     _attr_icon = "mdi:bed-clock"
@@ -163,12 +168,37 @@ class NapperStartSleepButton(NapperBaseButton):
 
     @property
     def available(self) -> bool:
-        """Only available when the child is not currently sleeping."""
-        return super().available and not self.coordinator.is_child_sleeping(self._baby_id)
+        """Only available when the child is awake and not already in Einschlafbegleitung."""
+        return (
+            super().available
+            and not self.coordinator.is_child_sleeping(self._baby_id)
+            and not self.coordinator.is_bedtime_routine_active(self._baby_id)
+        )
 
     async def async_press(self) -> None:
         target_dt, minutes_ago = self.coordinator.pop_action_timing(self._baby_id)
         await self.coordinator.async_start_sleep(
+            self._baby_id, minutes_ago=minutes_ago, target_dt=target_dt
+        )
+
+
+class NapperFallAsleepButton(NapperBaseButton):
+    """Button to confirm the child fell asleep ('Eingeschlafen'), ending Einschlafbegleitung and starting night sleep."""
+
+    _attr_name = "Eingeschlafen"
+    _attr_icon = "mdi:sleep"
+
+    def __init__(self, coordinator: NapperCoordinator, baby_id: str) -> None:
+        super().__init__(coordinator, baby_id, "fall_asleep")
+
+    @property
+    def available(self) -> bool:
+        """Only available when 'Einschlafbegleitung' is currently active."""
+        return super().available and self.coordinator.is_bedtime_routine_active(self._baby_id)
+
+    async def async_press(self) -> None:
+        target_dt, minutes_ago = self.coordinator.pop_action_timing(self._baby_id)
+        await self.coordinator.async_fall_asleep(
             self._baby_id, minutes_ago=minutes_ago, target_dt=target_dt
         )
 

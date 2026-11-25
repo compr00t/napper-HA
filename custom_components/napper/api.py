@@ -391,21 +391,19 @@ class NapperApiClient:
         await self.async_put_log(baby_id, updated)
         return updated
 
-    async def async_start_bedtime(
+    async def async_start_bedtime_routine(
         self,
         baby_id: str,
         current_logs: list[dict[str, Any]] | None = None,
         start_dt: datetime.datetime | None = None,
         minutes_ago: int | float = 0,
     ) -> dict[str, Any]:
-        """Start night sleep directly (or finish open pre-bedtime tracking so night sleep starts)."""
+        """Start pre-bedtime routine tracking ('Einschlafbegleitung') via an open BED_TIME log."""
         dt = resolve_target_datetime(start_dt, minutes_ago)
         if current_logs is None:
             today = await self.async_get_today(baby_id)
             current_logs = today.get("logs", today.get("allLogs", []))
 
-        # If pre-bedtime routine tracking (an open BED_TIME log) is currently running,
-        # close it (isOpen=False) so actual night sleep starts immediately.
         open_bedtimes = [
             entry
             for entry in current_logs
@@ -414,21 +412,7 @@ class NapperApiClient:
             and entry.get("category") == "BED_TIME"
         ]
         if open_bedtimes:
-            current_bed = open_bedtimes[0]
-            try:
-                start_parsed = datetime.datetime.fromisoformat(
-                    current_bed["start"].replace("Z", "+00:00")
-                )
-                if dt < start_parsed:
-                    dt = start_parsed
-            except Exception:
-                pass
-            end_iso = get_time_with_timezone(dt)
-            updated = dict(current_bed)
-            updated["end"] = end_iso
-            updated["isOpen"] = False
-            await self.async_put_log(baby_id, updated)
-            return updated
+            raise NapperApiError("Die Einschlafbegleitung läuft bereits.")
 
         iso = get_time_with_timezone(dt)
         log = build_empty_log(
@@ -438,10 +422,67 @@ class NapperApiClient:
             end_iso=iso,
             start_minutes_after_midnight=get_start_minutes_after_midnight("BED_TIME", dt),
             user_id=self.user_id,
-            is_open=False,
+            is_open=True,
         )
         await self.async_put_log(baby_id, log)
         return log
+
+    async def async_finish_bedtime_routine(
+        self,
+        baby_id: str,
+        current_logs: list[dict[str, Any]] | None = None,
+        end_dt: datetime.datetime | None = None,
+        minutes_ago: int | float = 0,
+    ) -> dict[str, Any]:
+        """Finish 'Einschlafbegleitung' ('Eingeschlafen') by closing the open BED_TIME log so night sleep starts."""
+        dt = resolve_target_datetime(end_dt, minutes_ago)
+        if current_logs is None:
+            today = await self.async_get_today(baby_id)
+            current_logs = today.get("logs", today.get("allLogs", []))
+
+        open_bedtimes = [
+            entry
+            for entry in current_logs
+            if entry.get("isOpen")
+            and not entry.get("skipped")
+            and entry.get("category") == "BED_TIME"
+        ]
+        if not open_bedtimes:
+            raise NapperApiError(
+                "Keine aktive Einschlafbegleitung zum Abschließen gefunden."
+            )
+
+        current_bed = open_bedtimes[0]
+        try:
+            start_parsed = datetime.datetime.fromisoformat(
+                current_bed["start"].replace("Z", "+00:00")
+            )
+            if dt < start_parsed:
+                dt = start_parsed
+        except Exception:
+            pass
+
+        end_iso = get_time_with_timezone(dt)
+        updated = dict(current_bed)
+        updated["end"] = end_iso
+        updated["isOpen"] = False
+        await self.async_put_log(baby_id, updated)
+        return updated
+
+    async def async_start_bedtime(
+        self,
+        baby_id: str,
+        current_logs: list[dict[str, Any]] | None = None,
+        start_dt: datetime.datetime | None = None,
+        minutes_ago: int | float = 0,
+    ) -> dict[str, Any]:
+        """Alias for async_start_bedtime_routine."""
+        return await self.async_start_bedtime_routine(
+            baby_id,
+            current_logs=current_logs,
+            start_dt=start_dt,
+            minutes_ago=minutes_ago,
+        )
 
     async def async_pause_nap(
         self,
@@ -658,7 +699,23 @@ class NapperApiClient:
             await self.async_put_log(baby_id, updated)
             return updated
 
-        # 2. Otherwise, end night sleep.
+        # 2. If pre-bedtime routine ('Einschlafbegleitung', open BED_TIME) is active, cancel it
+        open_bedtimes = [
+            entry
+            for entry in current_logs
+            if entry.get("isOpen")
+            and not entry.get("skipped")
+            and entry.get("category") == "BED_TIME"
+        ]
+        if open_bedtimes:
+            for entry in open_bedtimes:
+                if entry.get("id"):
+                    await self.async_delete_log(
+                        baby_id, entry["id"], cascade_night_wakings=True
+                    )
+            return {"deletedBedtimeRoutine": True}
+
+        # 3. Otherwise, end night sleep.
         # Note: Napper's backend validateLogHour only allows WOKE_UP logs between 03:00 and
         # 15:00 local time (180 <= minutes <= 900). Outside that window (e.g. ending or
         # cancelling night sleep in the evening or before 03:00 AM), Napper's deleteNightSleep
