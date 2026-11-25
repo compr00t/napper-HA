@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 import logging
 from typing import Any
@@ -13,10 +14,12 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from .api import (
     NapperApiClient,
     NapperApiError,
+    extract_merged_logs,
     is_nap_log_paused,
     parse_absolute_time_str,
 )
 from .const import DEFAULT_SCAN_INTERVAL_SECONDS, DOMAIN, NAP_ORDINAL_DE
+from .recorder_sync import async_reconcile_baby_recorder, build_authoritative_timelines
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -131,6 +134,34 @@ def compute_day_summary(
                 open_bedtime_log = entry
             elif cat == "NIGHT_WAKING" and open_night_waking_log is None:
                 open_night_waking_log = entry
+
+    # Ignore stale open logs from previous nights/sessions that precede a newer wake-up
+    if open_bedtime_log is not None:
+        ob_dt = parse_napper_iso(open_bedtime_log.get("start"), local_tz)
+        if (
+            ob_dt is None
+            or (latest_woke_up_dt is not None and ob_dt <= latest_woke_up_dt)
+            or (now - ob_dt).total_seconds() > 18 * 3600
+        ):
+            open_bedtime_log = None
+
+    if open_night_waking_log is not None:
+        onw_dt = parse_napper_iso(open_night_waking_log.get("start"), local_tz)
+        if (
+            onw_dt is None
+            or (latest_woke_up_dt is not None and onw_dt <= latest_woke_up_dt)
+            or (now - onw_dt).total_seconds() > 18 * 3600
+        ):
+            open_night_waking_log = None
+
+    if open_nap_log is not None:
+        on_dt = parse_napper_iso(open_nap_log.get("start"), local_tz)
+        if (
+            on_dt is None
+            or (last_tracked_awake_dt is not None and on_dt < last_tracked_awake_dt)
+            or (now - on_dt).total_seconds() > 12 * 3600
+        ):
+            open_nap_log = None
 
     # 2. Find today's WOKE_UP log (or estimate expected wake-up)
     today_woke_up_log: dict[str, Any] | None = None
@@ -733,6 +764,9 @@ class NapperCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self.babies: dict[str, dict[str, Any]] = {}
         self.minutes_ago_offset: dict[str, int] = {}
         self.absolute_time_input: dict[str, str] = {}
+        self._recorder_sync_ready: bool = False
+        self._recorder_sync_lock = asyncio.Lock()
+        self._last_recorder_sig: dict[str, Any] = {}
 
     def get_minutes_ago(self, baby_id: str) -> int:
         """Return the configured 'Zeitdifferenz' offset in minutes for a baby."""
@@ -983,6 +1017,51 @@ class NapperCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         )
         await self.async_request_refresh()
 
+    def _compute_recorder_sig(
+        self, logs: list[dict[str, Any]], summary: dict[str, Any]
+    ) -> tuple[Any, ...]:
+        tl = build_authoritative_timelines(logs)
+        sleep_tl = tuple(
+            (round(ts, 0), st) for ts, st in (tl.get("sleep_status") or [])
+        )
+        tracked_naps = tuple(
+            (
+                n.get("nap_number"),
+                n.get("start_iso"),
+                n.get("end_iso"),
+                n.get("is_open"),
+                n.get("is_paused"),
+            )
+            for n in (summary.get("naps") or [])
+            if n.get("is_tracked")
+        )
+        wake = summary.get("wake_up") or {}
+        return (sleep_tl, wake.get("is_tracked"), wake.get("iso"), tracked_naps)
+
+    def async_schedule_recorder_sync(self, force: bool = False) -> None:
+        """Schedule background Recorder reconciliation against Napper's source of truth."""
+        if force:
+            self._recorder_sync_ready = True
+        if not self._recorder_sync_ready or not self.data:
+            return
+        self.hass.async_create_task(self._async_run_recorder_sync(force=force))
+
+    async def _async_run_recorder_sync(self, force: bool = False) -> None:
+        async with self._recorder_sync_lock:
+            if not self.data:
+                return
+            for baby_id, payload in list(self.data.items()):
+                logs = payload.get("logs") or []
+                summary = payload.get("summary") or {}
+                sig = self._compute_recorder_sig(logs, summary)
+                if not force and self._last_recorder_sig.get(baby_id) == sig:
+                    continue
+                ok = await async_reconcile_baby_recorder(
+                    self.hass, baby_id, logs, summary
+                )
+                if ok:
+                    self._last_recorder_sig[baby_id] = sig
+
     async def _async_update_data(self) -> dict[str, dict[str, Any]]:
         """Fetch the latest logs and predicted schedule for each baby."""
         try:
@@ -992,11 +1071,12 @@ class NapperCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             self.babies = {b["id"]: b for b in babies_list if "id" in b}
 
             result: dict[str, dict[str, Any]] = {}
+            needs_sync = False
             for baby_id, baby_info in self.babies.items():
                 self.minutes_ago_offset.setdefault(baby_id, 0)
                 self.absolute_time_input.setdefault(baby_id, "")
                 today_data = await self.client.async_get_today(baby_id)
-                logs = today_data.get("logs", today_data.get("allLogs", []))
+                logs = extract_merged_logs(today_data)
                 schedule_items = today_data.get("scheduleItems", [])
                 summary = compute_day_summary(baby_info, logs, schedule_items)
                 result[baby_id] = {
@@ -1005,6 +1085,16 @@ class NapperCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     "scheduleItems": schedule_items,
                     "summary": summary,
                 }
+                if self._recorder_sync_ready:
+                    if self._last_recorder_sig.get(baby_id) != self._compute_recorder_sig(
+                        logs, summary
+                    ):
+                        needs_sync = True
+
+            if needs_sync:
+                # Defer slightly onto the event loop so CoordinatorEntity listeners update hass.states first
+                self.hass.loop.call_soon(self.async_schedule_recorder_sync)
+
             return result
         except NapperApiError as err:
             raise UpdateFailed(f"Error communicating with Napper API: {err}") from err

@@ -115,6 +115,68 @@ def is_nap_log_paused(log: dict[str, Any] | None) -> bool:
     return isinstance(last_pause, dict) and not last_pause.get("end")
 
 
+def extract_merged_logs(today_data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Extract and deduplicate all logs (today + previous day) from GET /today response, sorted newest-first."""
+    if not isinstance(today_data, dict):
+        return []
+
+    raw_lists: list[list[dict[str, Any]]] = []
+    for key in (
+        "logs",
+        "allLogs",
+        "openLogsPreviousDay",
+        "nightWakingsPreviousDay",
+        "logsPreviousDay",
+    ):
+        val = today_data.get(key)
+        if isinstance(val, list):
+            raw_lists.append([x for x in val if isinstance(x, dict)])
+
+    for single_key in ("bedTimePreviousDay", "latestWakingPreviousDay"):
+        val = today_data.get(single_key)
+        if isinstance(val, dict) and val.get("id"):
+            raw_lists.append([val])
+
+    by_id: dict[str, dict[str, Any]] = {}
+    unnamed: list[dict[str, Any]] = []
+    for lst in raw_lists:
+        for entry in lst:
+            lid = entry.get("id")
+            if not lid:
+                unnamed.append(entry)
+                continue
+            existing = by_id.get(lid)
+            if existing is None or str(entry.get("updatedAt") or "") >= str(
+                existing.get("updatedAt") or ""
+            ):
+                by_id[lid] = entry
+
+    merged = list(by_id.values()) + unnamed
+
+    def _sort_key(item: dict[str, Any]) -> tuple[float, float]:
+        s_ts = 0.0
+        e_ts = 0.0
+        for field, target in (("start", "s"), ("end", "e")):
+            raw = item.get(field)
+            if raw:
+                try:
+                    dt = datetime.datetime.fromisoformat(
+                        str(raw).replace("Z", "+00:00")
+                    )
+                    if dt.tzinfo is None:
+                        dt = dt.astimezone()
+                    if target == "s":
+                        s_ts = dt.timestamp()
+                    else:
+                        e_ts = dt.timestamp()
+                except Exception:
+                    pass
+        return (s_ts, e_ts)
+
+    merged.sort(key=_sort_key, reverse=True)
+    return merged
+
+
 def build_empty_log(
     log_id: str,
     category: str,
@@ -367,7 +429,7 @@ class NapperApiClient:
     ) -> dict[str, Any] | None:
         if current_logs is None:
             today = await self.async_get_today(baby_id)
-            current_logs = today.get("logs", today.get("allLogs", []))
+            current_logs = extract_merged_logs(today)
         open_logs = [
             entry
             for entry in current_logs
@@ -402,7 +464,7 @@ class NapperApiClient:
         dt = resolve_target_datetime(start_dt, minutes_ago)
         if current_logs is None:
             today = await self.async_get_today(baby_id)
-            current_logs = today.get("logs", today.get("allLogs", []))
+            current_logs = extract_merged_logs(today)
 
         open_bedtimes = [
             entry
@@ -438,7 +500,7 @@ class NapperApiClient:
         dt = resolve_target_datetime(end_dt, minutes_ago)
         if current_logs is None:
             today = await self.async_get_today(baby_id)
-            current_logs = today.get("logs", today.get("allLogs", []))
+            current_logs = extract_merged_logs(today)
 
         open_bedtimes = [
             entry
@@ -495,7 +557,7 @@ class NapperApiClient:
         dt = resolve_target_datetime(pause_dt, minutes_ago)
         if current_logs is None:
             today = await self.async_get_today(baby_id)
-            current_logs = today.get("logs", today.get("allLogs", []))
+            current_logs = extract_merged_logs(today)
 
         open_naps = [
             entry
@@ -542,7 +604,7 @@ class NapperApiClient:
         dt = resolve_target_datetime(resume_dt, minutes_ago)
         if current_logs is None:
             today = await self.async_get_today(baby_id)
-            current_logs = today.get("logs", today.get("allLogs", []))
+            current_logs = extract_merged_logs(today)
 
         open_naps = [
             entry
@@ -577,7 +639,7 @@ class NapperApiClient:
         dt = resolve_target_datetime(start_dt, minutes_ago)
         if current_logs is None:
             today = await self.async_get_today(baby_id)
-            current_logs = today.get("logs", today.get("allLogs", []))
+            current_logs = extract_merged_logs(today)
 
         open_wakings = [
             entry
@@ -627,7 +689,7 @@ class NapperApiClient:
         dt = resolve_target_datetime(end_dt, minutes_ago)
         if current_logs is None:
             today = await self.async_get_today(baby_id)
-            current_logs = today.get("logs", today.get("allLogs", []))
+            current_logs = extract_merged_logs(today)
 
         open_wakings = [
             entry
@@ -667,7 +729,7 @@ class NapperApiClient:
         dt = resolve_target_datetime(wake_dt, minutes_ago)
         if current_logs is None:
             today = await self.async_get_today(baby_id)
-            current_logs = today.get("logs", today.get("allLogs", []))
+            current_logs = extract_merged_logs(today)
 
         # 1. If an open NAP is running, end that nap
         open_naps = [
